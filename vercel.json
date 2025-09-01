@@ -7,12 +7,24 @@
     {
       "src": "api/auth-check.js",
       "use": "@vercel/node"
+    },
+    {
+      "src": "site/**",
+      "use": "@vercel/static"
     }
   ],
-  "rewrites": [
+  "routes": [
     {
-      "source": "/(.*)",
-      "destination": "/site/$1"
+      "src": "/api/(.*)",
+      "dest": "/api/$1"
+    },
+    {
+      "src": "/",
+      "dest": "/site/index.html"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/site/$1"
     }
   ],
   "headers": [
