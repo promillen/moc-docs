@@ -7,6 +7,26 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false)
   const { redirect } = router.query
 
+  const handleLogin = () => {
+    setIsLoading(true)
+    
+    // Construct the dashboard login URL with return redirect
+    const dashboardLoginUrl = new URL('https://dashboard.moc-iot.com/auth')
+    
+    // After successful login, dashboard should redirect back here with token
+    const returnUrl = new URL('/api/auth/callback', 'https://docs.moc-iot.com')
+    if (redirect) {
+      returnUrl.searchParams.set('redirect', redirect as string)
+    } else {
+      returnUrl.searchParams.set('redirect', '/')
+    }
+    
+    dashboardLoginUrl.searchParams.set('redirect', returnUrl.toString())
+    
+    // Redirect to dashboard login
+    window.location.href = dashboardLoginUrl.toString()
+  }
+
   useEffect(() => {
     // Check if user is already authenticated
     const checkAuth = async () => {
@@ -20,28 +40,13 @@ export default function Login() {
       } catch (error) {
         console.log('Not authenticated')
       }
+      
+      // If not authenticated, automatically redirect to dashboard login
+      handleLogin()
     }
 
     checkAuth()
   }, [router, redirect])
-
-  const handleLogin = () => {
-    setIsLoading(true)
-    
-    // Construct the dashboard login URL with return redirect
-    const dashboardLoginUrl = new URL('https://dashboard.moc-iot.com/auth')
-    
-    // After successful login, dashboard should redirect back here with token
-    const returnUrl = new URL('/api/auth/callback', window.location.origin)
-    if (redirect) {
-      returnUrl.searchParams.set('redirect', redirect as string)
-    }
-    
-    dashboardLoginUrl.searchParams.set('redirect', returnUrl.toString())
-    
-    // Redirect to dashboard login
-    window.location.href = dashboardLoginUrl.toString()
-  }
 
   return (
     <>
