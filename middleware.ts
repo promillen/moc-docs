@@ -7,6 +7,10 @@ const publicPaths = ['/login', '/api/auth']
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
+  // Temporarily disable authentication to test redirect loop fix
+  console.log('Middleware hit:', pathname)
+  return NextResponse.next()
+
   // Skip authentication check for public paths
   if (publicPaths.some(path => pathname.startsWith(path))) {
     return NextResponse.next()
@@ -35,7 +39,9 @@ export const config = {
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
+     * - api routes (handled separately)
+     * - login page (public)
      */
-    '/((?!_next/static|_next/image|favicon.ico).*)',
+    '/((?!_next/static|_next/image|favicon.ico|api|login).*)',
   ],
 }

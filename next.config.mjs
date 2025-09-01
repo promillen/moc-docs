@@ -6,7 +6,7 @@ const withNextra = nextra({
 })
 
 export default withNextra({
-  trailingSlash: true,
+  trailingSlash: false,
   images: {
     unoptimized: true
   }
