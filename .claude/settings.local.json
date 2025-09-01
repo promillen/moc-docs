@@ -27,7 +27,8 @@
       "Read(C:\\Programming Projects\\MOC-IoT\\Dashboard\\src/**)",
       "Read(C:\\Programming Projects\\MOC-IoT\\Dashboard\\src/**)",
       "Read(C:\\Programming Projects\\MOC-IoT\\Dashboard/**)",
-      "Read(C:\\Programming Projects\\MOC-IoT\\Dashboard/**)"
+      "Read(C:\\Programming Projects\\MOC-IoT\\Dashboard/**)",
+      "Bash(npm install:*)"
     ],
     "deny": [],
     "ask": []

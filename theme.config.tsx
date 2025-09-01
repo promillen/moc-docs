@@ -2,17 +2,22 @@ import React from 'react'
 import { DocsThemeConfig } from 'nextra-theme-docs'
 
 const LogoutButton = () => {
-  const handleLogout = () => {
+  const handleLogout = async () => {
     try {
-      // Clear authentication cookies
-      document.cookie = 'moc-auth-token=; Max-Age=0; Path=/; Domain=.moc-iot.com'
-      document.cookie = 'moc-session=; Max-Age=0; Path=/; Domain=.moc-iot.com'
-      document.cookie = 'sb-access-token=; Max-Age=0; Path=/; Domain=.moc-iot.com'
+      // Import Supabase client dynamically to avoid SSR issues
+      const { supabase } = await import('./lib/supabase')
+      
+      // Sign out from Supabase (this clears the session and cookies)
+      await supabase.auth.signOut()
       
       // Redirect to login page
       window.location.href = '/login'
     } catch (error) {
       console.error('Logout failed:', error)
+      // Fallback: clear cookies manually and redirect
+      document.cookie = 'sb-access-token=; Max-Age=0; Path=/'
+      document.cookie = 'sb-refresh-token=; Max-Age=0; Path=/'
+      window.location.href = '/login'
     }
   }
 

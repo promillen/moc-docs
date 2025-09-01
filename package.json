@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.56.1",
     "next": "^14.0.0",
     "nextra": "^3.0.0",
     "nextra-theme-docs": "^3.0.0",
