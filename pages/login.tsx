@@ -23,6 +23,9 @@ export default function Login() {
     
     dashboardLoginUrl.searchParams.set('redirect', returnUrl.toString())
     
+    console.log('Docs login - redirecting to:', dashboardLoginUrl.toString())
+    console.log('Docs login - return URL:', returnUrl.toString())
+    
     // Redirect to dashboard login
     window.location.href = dashboardLoginUrl.toString()
   }
