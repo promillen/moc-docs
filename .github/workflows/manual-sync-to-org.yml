@@ -1,0 +1,33 @@
+name: Manual Sync to Organization Repo
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: manual-sync-to-org
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Remove workflows (don’t copy them to org repo)
+        run: rm -rf .github/workflows
+
+      - name: Add organization remote
+        run: |
+          git remote add org https://x-access-token:${{ secrets.SYNC_TOKEN }}@github.com/MOC-IoT/Docs.git
+
+      - name: Force push to org main
+        run: git push --force org HEAD:main
