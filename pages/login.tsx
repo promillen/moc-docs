@@ -1,7 +1,11 @@
 import { useRouter } from 'next/router'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import Head from 'next/head'
 import { supabase } from '../lib/supabase'
+import { Button } from '../components/ui/button'
+import { Input } from '../components/ui/input'
+import { Label } from '../components/ui/label'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
 
 export default function Login() {
   const router = useRouter()
@@ -12,7 +16,6 @@ export default function Login() {
   const { redirect } = router.query
 
   useEffect(() => {
-    // Check if user is already authenticated
     const checkAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (session) {
@@ -22,7 +25,7 @@ export default function Login() {
     checkAuth()
   }, [])
 
-  const checkDeveloperRole = async (userId: string) => {
+  const checkDeveloperRole = useCallback(async (userId: string) => {
     try {
       const { data: roleData, error } = await supabase
         .from('user_roles')
@@ -36,8 +39,7 @@ export default function Login() {
         return
       }
 
-      if (roleData?.role === 'developer' || roleData?.role === 'admin') {
-        // User has developer access, redirect to docs
+      if (roleData?.role === 'developer') {
         router.push((redirect as string) || '/')
       } else {
         setError('Developer access required for documentation')
@@ -47,7 +49,7 @@ export default function Login() {
       console.error('Role verification failed:', error)
       setError('Authentication failed')
     }
-  }
+  }, [router, redirect])
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -81,70 +83,64 @@ export default function Login() {
         <title>Login - MOC-IoT Documentation</title>
       </Head>
       
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="max-w-md w-full space-y-8 p-6">
-          <div>
-            <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-              MOC-IoT Documentation
-            </h2>
-            <p className="mt-2 text-center text-sm text-gray-600">
+      <div className="min-h-screen flex items-center justify-center bg-background px-4">
+        <Card className="w-full max-w-md">
+          <CardHeader className="space-y-1 text-center">
+            <CardTitle className="text-2xl font-bold">MOC-IoT Documentation</CardTitle>
+            <CardDescription>
               Sign in to access developer documentation
-            </p>
-          </div>
-          
-          <form onSubmit={handleSignIn} className="mt-8 space-y-6">
-            {error && (
-              <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-                {error}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSignIn} className="space-y-4">
+              {error && (
+                <div className="bg-destructive/10 border border-destructive/20 text-destructive px-4 py-3 rounded-md text-sm">
+                  {error}
+                </div>
+              )}
+              
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="Enter your email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    autoComplete="email"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="password">Password</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    placeholder="Enter your password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    autoComplete="current-password"
+                  />
+                </div>
               </div>
-            )}
-            
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-                Email Address
-              </label>
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                className="mt-1 appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="Enter your email"
-              />
-            </div>
-            
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                Password
-              </label>
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                className="mt-1 appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="Enter your password"
-              />
-            </div>
-            
-            <div>
-              <button
-                type="submit"
-                disabled={loading}
-                className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+
+              <Button 
+                type="submit" 
+                disabled={loading} 
+                className="w-full"
               >
-                {loading ? 'Signing In...' : 'Sign In'}
-              </button>
-            </div>
+                {loading ? 'Signing in...' : 'Sign in'}
+              </Button>
+            </form>
             
-            <div className="text-center text-sm text-gray-500">
-              <p>Developer or admin role required for access</p>
+            <div className="mt-4 text-center text-sm text-muted-foreground">
+              <p>Documentation access is restricted to developers and administrators only.</p>
               <p className="mt-1">Use the same credentials as the main dashboard</p>
             </div>
-          </form>
-        </div>
+          </CardContent>
+        </Card>
       </div>
     </>
   )
