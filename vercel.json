@@ -1,5 +1,16 @@
 {
   "trailingSlash": false,
+  "functions": {
+    "pages/api/auth/verify.ts": {
+      "runtime": "@vercel/node"
+    },
+    "pages/api/auth/callback.ts": {
+      "runtime": "@vercel/node"
+    },
+    "pages/api/auth/logout.ts": {
+      "runtime": "@vercel/node"
+    }
+  },
   "redirects": [
     {
       "source": "/docs/:path*",

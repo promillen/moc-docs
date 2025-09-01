@@ -9,5 +9,9 @@ export default withNextra({
   trailingSlash: false,
   images: {
     unoptimized: true
+  },
+  // Force Next.js to include API routes in production build
+  generateBuildId: async () => {
+    return 'build-' + Date.now()
   }
 })
