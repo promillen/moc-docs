@@ -3,7 +3,16 @@
     "allow": [
       "Bash(npm install)",
       "Bash(npm run dev:*)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Read(C:\\Programming Projects\\MOC-IoT\\Dashboard/**)",
+      "Read(C:\\Programming Projects\\MOC-IoT\\Dashboard\\src/**)",
+      "Read(C:\\Programming Projects\\MOC-IoT\\Dashboard\\src\\pages/**)",
+      "Read(C:\\Programming Projects\\MOC-IoT\\Dashboard\\src\\hooks/**)",
+      "Read(C:\\Programming Projects\\MOC-IoT\\Dashboard\\src\\api/**)",
+      "Read(C:\\Programming Projects\\MOC-IoT\\Dashboard\\api/**)",
+      "Read(C:\\Programming Projects\\MOC-IoT\\Dashboard\\api\\auth/**)",
+      "Read(C:\\Programming Projects\\MOC-IoT\\Dashboard\\api\\auth/**)",
+      "Read(C:\\Programming Projects\\MOC-IoT\\Dashboard/**)"
     ],
     "deny": [],
     "ask": []
