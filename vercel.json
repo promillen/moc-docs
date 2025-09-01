@@ -1,4 +1,14 @@
 {
+  "builds": [
+    {
+      "src": "requirements.txt",
+      "use": "@vercel/python"
+    },
+    {
+      "src": "api/auth-check.js",
+      "use": "@vercel/node"
+    }
+  ],
   "rewrites": [
     {
       "source": "/(.*)",
