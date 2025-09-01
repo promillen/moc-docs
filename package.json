@@ -2,11 +2,9 @@
   "name": "moc-iot-docs",
   "version": "1.0.0",
   "engines": {
-    "node": ">=18.x",
-    "python": ">=3.8"
+    "node": ">=18.x"
   },
   "scripts": {
-    "install": "echo 'Installing dependencies' && pip install -r requirements.txt",
     "build": "mkdocs build",
     "dev": "mkdocs serve"
   },
