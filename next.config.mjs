@@ -6,8 +6,6 @@ const withNextra = nextra({
 })
 
 export default withNextra({
-  output: 'export',
-  distDir: 'out',
   trailingSlash: true,
   images: {
     unoptimized: true
