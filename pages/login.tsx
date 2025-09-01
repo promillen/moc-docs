@@ -7,44 +7,47 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false)
   const { redirect } = router.query
 
+  const checkAuthCookies = () => {
+    // Check for authentication cookies directly
+    const cookies = document.cookie.split(';').reduce((acc, cookie) => {
+      const [key, value] = cookie.trim().split('=')
+      acc[key] = value
+      return acc
+    }, {} as Record<string, string>)
+
+    const hasAuth = cookies['moc-auth-token'] || cookies['sb-access-token'] || cookies['supabase.auth.token']
+    console.log('Auth cookies found:', !!hasAuth)
+    return !!hasAuth
+  }
+
   const handleLogin = () => {
     setIsLoading(true)
     
-    // Construct the dashboard login URL with return redirect
+    // Construct the dashboard login URL with direct return to docs
     const dashboardLoginUrl = new URL('https://dashboard.moc-iot.com/auth')
     
-    // After successful login, dashboard should redirect back here with token
-    const returnUrl = new URL('/api/auth/callback', 'https://docs.moc-iot.com')
-    if (redirect) {
-      returnUrl.searchParams.set('redirect', redirect as string)
-    } else {
-      returnUrl.searchParams.set('redirect', '/')
-    }
-    
-    dashboardLoginUrl.searchParams.set('redirect', returnUrl.toString())
+    // Return directly to docs after login (no API callback needed)
+    const returnUrl = `https://docs.moc-iot.com${(redirect as string) || '/'}`
+    dashboardLoginUrl.searchParams.set('redirect', returnUrl)
     
     console.log('Docs login - redirecting to:', dashboardLoginUrl.toString())
-    console.log('Docs login - return URL:', returnUrl.toString())
     
     // Redirect to dashboard login
     window.location.href = dashboardLoginUrl.toString()
   }
 
   useEffect(() => {
-    // Check if user is already authenticated
-    const checkAuth = async () => {
-      try {
-        const response = await fetch('/api/auth/verify')
-        if (response.ok) {
-          // User is already authenticated, redirect to docs
-          router.push((redirect as string) || '/')
-          return
-        }
-      } catch (error) {
-        console.log('Not authenticated')
+    // Check if user is already authenticated via cookies
+    const checkAuth = () => {
+      if (checkAuthCookies()) {
+        // User is authenticated, redirect to docs
+        console.log('User already authenticated, redirecting to docs')
+        router.push((redirect as string) || '/')
+        return
       }
       
       // If not authenticated, automatically redirect to dashboard login
+      console.log('No authentication found, redirecting to dashboard')
       handleLogin()
     }
 

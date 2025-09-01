@@ -2,9 +2,14 @@ import React from 'react'
 import { DocsThemeConfig } from 'nextra-theme-docs'
 
 const LogoutButton = () => {
-  const handleLogout = async () => {
+  const handleLogout = () => {
     try {
-      await fetch('/api/auth/logout', { method: 'POST' })
+      // Clear authentication cookies
+      document.cookie = 'moc-auth-token=; Max-Age=0; Path=/; Domain=.moc-iot.com'
+      document.cookie = 'moc-session=; Max-Age=0; Path=/; Domain=.moc-iot.com'
+      document.cookie = 'sb-access-token=; Max-Age=0; Path=/; Domain=.moc-iot.com'
+      
+      // Redirect to login page
       window.location.href = '/login'
     } catch (error) {
       console.error('Logout failed:', error)

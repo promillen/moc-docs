@@ -15,21 +15,25 @@ export function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  // Check for auth token in cookies
+  // Check for auth token in cookies (multiple possible cookie names)
   const authToken = request.cookies.get('moc-auth-token')?.value
   const authSession = request.cookies.get('moc-session')?.value
+  const sbToken = request.cookies.get('sb-access-token')?.value
+  const supabaseAuth = request.cookies.get('supabase.auth.token')?.value
 
-  console.log('Auth check - token exists:', !!authToken, 'session exists:', !!authSession)
+  const hasAuth = !!(authToken || authSession || sbToken || supabaseAuth)
+  
+  console.log('Auth check - has any auth cookie:', hasAuth)
 
   // If no auth token, redirect to login
-  if (!authToken && !authSession) {
+  if (!hasAuth) {
     const loginUrl = new URL('/login', request.url)
     loginUrl.searchParams.set('redirect', pathname)
     console.log('No auth found, redirecting to:', loginUrl.toString())
     return NextResponse.redirect(loginUrl)
   }
 
-  // Continue - the actual validation will be done by the verify API
+  // User has auth cookies, allow access (role checking will be done client-side)
   console.log('Auth found, allowing access to:', pathname)
   return NextResponse.next()
 }
