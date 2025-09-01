@@ -5,7 +5,7 @@
     "node": ">=18.x"
   },
   "scripts": {
-    "build": "mkdocs build",
+    "build": "python build.py",
     "dev": "mkdocs serve"
   },
   "dependencies": {
