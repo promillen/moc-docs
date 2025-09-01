@@ -7,12 +7,11 @@ const publicPaths = ['/login', '/api/auth']
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Temporarily disable authentication to test redirect loop fix
-  console.log('Middleware hit:', pathname)
-  return NextResponse.next()
+  console.log('Middleware checking path:', pathname)
 
   // Skip authentication check for public paths
   if (publicPaths.some(path => pathname.startsWith(path))) {
+    console.log('Public path, allowing access:', pathname)
     return NextResponse.next()
   }
 
@@ -20,15 +19,18 @@ export function middleware(request: NextRequest) {
   const authToken = request.cookies.get('moc-auth-token')?.value
   const authSession = request.cookies.get('moc-session')?.value
 
+  console.log('Auth check - token exists:', !!authToken, 'session exists:', !!authSession)
+
   // If no auth token, redirect to login
   if (!authToken && !authSession) {
     const loginUrl = new URL('/login', request.url)
     loginUrl.searchParams.set('redirect', pathname)
+    console.log('No auth found, redirecting to:', loginUrl.toString())
     return NextResponse.redirect(loginUrl)
   }
 
   // Continue - the actual validation will be done by the verify API
-  // This middleware just ensures users go through the login flow
+  console.log('Auth found, allowing access to:', pathname)
   return NextResponse.next()
 }
 
