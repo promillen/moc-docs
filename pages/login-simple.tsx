@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback } from 'react'
 import Head from 'next/head'
 import { supabase } from '../lib/supabase'
 
-export default function Login() {
+export default function LoginSimple() {
   const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -11,64 +11,76 @@ export default function Login() {
   const [error, setError] = useState('')
   const { redirect } = router.query
 
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session) {
+        await checkDeveloperRole(session.user.id)
+      }
+    }
+    checkAuth()
+  }, [])
+
   const checkDeveloperRole = useCallback(async (userId: string) => {
     try {
+      console.log('Checking role for user:', userId)
       const { data: roleData, error } = await supabase
         .from('user_roles')
         .select('role')
         .eq('user_id', userId)
         .single()
 
+      console.log('Role check result:', { roleData, error })
+
       if (error) {
-        if (error.code === 'PGRST116') {
-          setError('User role not found. Please contact administrator.')
-        } else {
-          setError(`Unable to verify access permissions: ${error.message}`)
-        }
-        setLoading(false)
+        console.error('Role check error:', error)
+        setError('Unable to verify access permissions')
         return
       }
 
       if (roleData?.role === 'developer') {
-        const redirectPath = (redirect as string) || '/'
-        await router.replace(redirectPath)
-        setLoading(false)
+        console.log('Developer role confirmed, redirecting')
+        router.push((redirect as string) || '/')
       } else {
+        console.log('User role is not developer:', roleData?.role)
         setError('Developer access required for documentation')
         await supabase.auth.signOut()
-        setLoading(false)
       }
     } catch (error) {
+      console.error('Role verification failed:', error)
       setError('Authentication failed')
-      setLoading(false)
     }
   }, [router, redirect])
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
+    console.log('Form submitted')
     setLoading(true)
     setError('')
 
     try {
+      console.log('Attempting to sign in with:', { email })
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
 
+      console.log('Supabase auth response:', { data, error })
+
       if (error) {
+        console.error('Auth error:', error)
         setError(error.message)
-        setLoading(false)
         return
       }
 
       if (data.user) {
+        console.log('User authenticated, checking role')
         await checkDeveloperRole(data.user.id)
-      } else {
-        setError('Authentication failed - no user data')
-        setLoading(false)
       }
     } catch (error) {
+      console.error('Unexpected error:', error)
       setError('An unexpected error occurred')
+    } finally {
       setLoading(false)
     }
   }
@@ -118,7 +130,6 @@ export default function Login() {
                 {error}
               </div>
             )}
-
 
             <div>
               <label htmlFor="email" style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', color: '#374151', marginBottom: '0.5rem' }}>

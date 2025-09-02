@@ -66,13 +66,32 @@ The docs follow a structured organization:
 - **Development** - Local setup, testing, contributing guides
 - **Reference** - Environment variables, database schema, changelog
 
-## Authentication Integration
+## Authentication System
 
-The documentation site requires authentication through the main dashboard system:
-- Client-side auth validation via JavaScript
-- API endpoint `/api/auth/check-developer` verifies developer role
-- Unauthenticated users redirect to `dashboard.moc-iot.com/auth`
-- Local development bypasses authentication checks
+The documentation site uses role-based authentication integrated with the main MOC-IoT system:
+
+### Implementation
+- **Client-side authentication** using Supabase Auth (same as main dashboard)
+- **Role verification** against `user_roles` table requiring `developer` role
+- **Session management** handled entirely client-side for reliability
+- **Automatic redirects** to login page with return URL preservation
+
+### Key Components
+- `/pages/login.tsx` - Authentication form with role verification
+- `/pages/_app.tsx` - Global auth wrapper checking sessions on all pages
+- `/middleware.ts` - Minimal pass-through middleware (auth handled client-side)
+- `/pages/authentication.mdx` - Complete documentation of auth flow
+
+### User Flow
+1. User accesses any documentation page
+2. `_app.tsx` checks for valid Supabase session
+3. If no session, redirects to `/login?redirect=<original-path>`
+4. Login verifies credentials and checks for `developer` role in database
+5. Successful login redirects back to original page
+6. Session persists across pages and browser restarts
+
+### Database Requirement
+Users must exist in the `user_roles` table with `role = 'developer'` to access docs.
 
 ## Deployment Configuration
 

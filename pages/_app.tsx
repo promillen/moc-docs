@@ -1,8 +1,9 @@
 import type { AppProps } from 'next/app'
 import { useRouter } from 'next/router'
 import { useEffect, useState } from 'react'
+import Head from 'next/head'
 import { supabase } from '../lib/supabase'
-import '../styles/globals.css'
+// import '../styles/globals.css'
 
 interface User {
   id: string
@@ -33,7 +34,7 @@ export default function App({ Component, pageProps }: AppProps) {
           return
         }
 
-        // Check if user has developer or admin role
+        // Check if user has developer role
         const { data: roleData, error: roleError } = await supabase
           .from('user_roles')
           .select('role')
@@ -41,7 +42,6 @@ export default function App({ Component, pageProps }: AppProps) {
           .single()
 
         if (roleError || !roleData) {
-          console.error('Role check error:', roleError)
           router.push(`/login?redirect=${encodeURIComponent(router.asPath)}`)
           return
         }
@@ -61,7 +61,6 @@ export default function App({ Component, pageProps }: AppProps) {
         })
 
       } catch (error) {
-        console.error('Auth check failed:', error)
         router.push(`/login?redirect=${encodeURIComponent(router.asPath)}`)
       } finally {
         setLoading(false)
@@ -86,12 +85,36 @@ export default function App({ Component, pageProps }: AppProps) {
   // Show loading spinner while checking authentication
   if (loading && router.pathname !== '/login' && !router.pathname.startsWith('/api/')) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-          <p className="mt-2 text-muted-foreground">Verifying access...</p>
+      <>
+        <Head>
+          <style>{`
+            @keyframes spin {
+              from { transform: rotate(0deg); }
+              to { transform: rotate(360deg); }
+            }
+          `}</style>
+        </Head>
+        <div style={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: '#f9fafb'
+        }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{
+              width: '32px',
+              height: '32px',
+              border: '2px solid #e5e7eb',
+              borderTopColor: '#3b82f6',
+              borderRadius: '50%',
+              animation: 'spin 1s linear infinite',
+              margin: '0 auto'
+            }}></div>
+            <p style={{ marginTop: '8px', color: '#6b7280' }}>Verifying access...</p>
+          </div>
         </div>
-      </div>
+      </>
     )
   }
 
