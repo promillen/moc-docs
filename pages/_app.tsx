@@ -3,7 +3,7 @@ import { useRouter } from 'next/router'
 import { useEffect, useState } from 'react'
 import Head from 'next/head'
 import { supabase } from '../lib/supabase'
-// import '../styles/globals.css'
+import '../styles/mermaid.css'
 
 interface User {
   id: string

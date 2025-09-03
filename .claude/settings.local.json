@@ -44,7 +44,8 @@
       "Read(C:\\Programming Projects\\MOC-IoT\\CoAP-bridge/**)",
       "Read(C:\\Programming Projects\\MOC-IoT\\CoAP-bridge/**)",
       "Read(C:\\Programming Projects\\MOC-IoT\\Landing-page/**)",
-      "Read(C:\\Programming Projects\\MOC-IoT\\Landing-page/**)"
+      "Read(C:\\Programming Projects\\MOC-IoT\\Landing-page/**)",
+      "Bash(git add:*)"
     ],
     "deny": [],
     "ask": []
