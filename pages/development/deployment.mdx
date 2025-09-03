@@ -1,0 +1,481 @@
+# Deployment Procedures
+
+This guide covers deployment procedures for all components of the MOC-IoT system, including the CoAP bridge, dashboard, and documentation site.
+
+## System Components Overview
+
+The MOC-IoT system consists of several deployable components:
+
+- **CoAP Bridge**: Python server on Fly.io
+- **Dashboard**: React SPA (hosted on Lovable or similar platform)
+- **Documentation**: Nextra site on Vercel with authentication
+- **Database**: Supabase PostgreSQL with Edge Functions
+
+## CoAP Bridge Deployment (Fly.io)
+
+### Prerequisites
+
+```bash
+# Install Fly.io CLI
+curl -L https://fly.io/install.sh | sh
+
+# Authenticate with Fly.io
+flyctl auth login
+
+# Verify access to MOC-IoT app
+flyctl apps list | grep flyio-nbiot
+```
+
+### Environment Configuration
+
+Set required environment variables in Fly.io:
+
+```bash
+# View current secrets
+flyctl secrets list --app flyio-nbiot
+
+# Set Supabase credentials
+flyctl secrets set SUPABASE_URL="https://cdwtsrzshpotkfbyyyjk.supabase.co" --app flyio-nbiot
+flyctl secrets set SUPABASE_API_KEY="[SERVICE_ROLE_KEY]" --app flyio-nbiot
+
+# Optional debugging
+flyctl secrets set LOG_LEVEL="INFO" --app flyio-nbiot
+```
+
+**Important**: Use the **service role key** (not anon key) for database write permissions.
+
+### Deployment Process
+
+```bash
+# Navigate to CoAP bridge directory
+cd "C:\Programming Projects\MOC-IoT\CoAP-bridge"
+
+# Verify fly.toml configuration
+cat fly.toml
+
+# Deploy the application
+flyctl deploy --app flyio-nbiot
+
+# Monitor deployment
+flyctl status --app flyio-nbiot
+flyctl logs --app flyio-nbiot
+```
+
+### Deployment Verification
+
+```bash
+# Check application health
+flyctl status --app flyio-nbiot
+
+# View recent logs
+flyctl logs --app flyio-nbiot --lines 50
+
+# Test CoAP endpoint
+echo "test" | coap-client -m POST coap://flyio-nbiot.fly.dev:5683/data
+```
+
+### Rolling Back Deployments
+
+```bash
+# List recent releases
+flyctl releases --app flyio-nbiot
+
+# Rollback to previous version
+flyctl releases rollback --app flyio-nbiot
+
+# Or rollback to specific version
+flyctl releases rollback [VERSION_NUMBER] --app flyio-nbiot
+```
+
+## Dashboard Deployment
+
+### Build Process
+
+```bash
+# Navigate to dashboard directory
+cd "C:\Programming Projects\MOC-IoT\Dashboard"
+
+# Install dependencies
+npm install
+
+# Create production build
+npm run build
+
+# Test production build locally (optional)
+npm run preview
+```
+
+### Environment Configuration
+
+Ensure proper environment variables are configured:
+
+```typescript
+// Check vite.config.ts for build settings
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    port: 8080,
+  },
+  build: {
+    outDir: 'dist',
+    sourcemap: false,  // Disable for production
+  }
+});
+```
+
+### Deployment to Lovable (or similar platform)
+
+```bash
+# If using Lovable platform
+# The build artifacts in 'dist/' directory are deployed automatically
+
+# For manual deployment to other platforms:
+# 1. Upload contents of 'dist/' directory to web server
+# 2. Configure web server to serve index.html for all routes (SPA routing)
+# 3. Ensure HTTPS is enabled
+```
+
+### Deployment Verification
+
+1. **Access Dashboard**: Navigate to deployed URL
+2. **Authentication Test**: Verify login functionality
+3. **Real-time Data**: Check that device data loads correctly
+4. **Map Functionality**: Ensure device locations display on map
+5. **Role-based Access**: Test admin/user permission differences
+
+## Documentation Site Deployment (Vercel)
+
+### Prerequisites
+
+```bash
+# Install Vercel CLI (optional)
+npm install -g vercel
+
+# Authenticate with Vercel
+vercel login
+```
+
+### Build Configuration
+
+The documentation site builds automatically from the `main` branch:
+
+```json
+// package.json - build settings
+{
+  "scripts": {
+    "build": "next build",
+    "dev": "next dev",
+    "start": "next start"
+  }
+}
+```
+
+### Environment Variables (Vercel)
+
+Configure these environment variables in Vercel dashboard:
+
+```bash
+# Supabase connection (same as dashboard)
+NEXT_PUBLIC_SUPABASE_URL=https://cdwtsrzshpotkfbyyyjk.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+# Optional: Analytics
+VERCEL_ANALYTICS_ID=[YOUR_ANALYTICS_ID]
+```
+
+### Deployment Process
+
+```bash
+# Manual deployment (if needed)
+cd "C:\Programming Projects\MOC-IoT\Docs"
+
+# Deploy to Vercel
+vercel --prod
+
+# Or push to main branch for automatic deployment
+git add -A
+git commit -m "Update documentation"
+git push origin main
+```
+
+### Deployment Verification
+
+1. **Access Documentation**: Navigate to docs URL
+2. **Authentication**: Test login with developer role
+3. **Content Loading**: Verify all pages load correctly
+4. **Navigation**: Test navigation between sections
+5. **Search Functionality**: If enabled, test search feature
+
+## Database and Edge Functions (Supabase)
+
+### Edge Function Deployment
+
+Edge functions deploy automatically when code is pushed to Supabase:
+
+```bash
+# Install Supabase CLI
+npm install supabase --save-dev
+
+# Login to Supabase
+npx supabase login
+
+# Link to project
+npx supabase link --project-ref cdwtsrzshpotkfbyyyjk
+
+# Deploy edge functions
+npx supabase functions deploy ingest-sensor-data
+
+# View function logs
+npx supabase functions logs ingest-sensor-data
+```
+
+### Database Schema Updates
+
+```sql
+-- Apply schema changes via Supabase dashboard or migrations
+
+-- Example: Add new column to device_config
+ALTER TABLE device_config ADD COLUMN new_field TEXT;
+
+-- Update RLS policies if needed
+CREATE POLICY "new_policy" ON device_config FOR SELECT USING (true);
+```
+
+### Environment Variables (Supabase)
+
+Configure secrets in Supabase dashboard:
+
+```bash
+# Edge function secrets
+HERE_API_KEY=[YOUR_HERE_API_KEY]
+FLY_INGEST_SECRET=[HMAC_SECRET_KEY]
+
+# Optional: External service keys
+EXTERNAL_API_KEY=[EXTERNAL_SERVICE_KEY]
+```
+
+## Monitoring and Health Checks
+
+### CoAP Bridge Monitoring
+
+```bash
+# Check application status
+flyctl status --app flyio-nbiot
+
+# View metrics
+flyctl metrics --app flyio-nbiot
+
+# Monitor logs in real-time
+flyctl logs --app flyio-nbiot --follow
+
+# Scale resources if needed
+flyctl scale memory 512 --app flyio-nbiot
+```
+
+### Dashboard Monitoring
+
+```bash
+# Check build status (Lovable platform)
+# Usually accessible through platform dashboard
+
+# Monitor client-side errors
+# Check browser console for JavaScript errors
+# Monitor network requests for failed API calls
+```
+
+### Database Monitoring
+
+```bash
+# View edge function logs
+npx supabase functions logs ingest-sensor-data --follow
+
+# Monitor database performance
+# Check Supabase dashboard for query performance
+# Monitor connection pool usage
+```
+
+## Disaster Recovery
+
+### Data Backup
+
+```bash
+# Backup Supabase database
+npx supabase db dump --db-url "postgresql://..." > backup.sql
+
+# Backup Fly.io application configuration
+flyctl config show --app flyio-nbiot > flyio-config-backup.toml
+```
+
+### Service Recovery
+
+#### CoAP Bridge Recovery
+
+```bash
+# If app is not responding
+flyctl restart --app flyio-nbiot
+
+# If deployment fails
+flyctl releases rollback --app flyio-nbiot
+
+# If complete rebuild needed
+flyctl deploy --app flyio-nbiot --force
+```
+
+#### Dashboard Recovery
+
+```bash
+# Redeploy dashboard
+cd "C:\Programming Projects\MOC-IoT\Dashboard"
+npm run build
+# Upload to hosting platform
+```
+
+#### Database Recovery
+
+```bash
+# Restore from backup
+psql -d "postgresql://..." < backup.sql
+
+# Reset edge functions
+npx supabase functions deploy ingest-sensor-data --force
+```
+
+## Security Considerations
+
+### Secrets Management
+
+```bash
+# Rotate HMAC secrets
+NEW_SECRET=$(openssl rand -hex 32)
+flyctl secrets set FLY_INGEST_SECRET="$NEW_SECRET" --app flyio-nbiot
+
+# Update corresponding Supabase edge function secret
+npx supabase secrets set FLY_INGEST_SECRET="$NEW_SECRET"
+```
+
+### Access Control
+
+```bash
+# Verify Fly.io app access
+flyctl auth whoami
+flyctl apps list | grep flyio-nbiot
+
+# Check Supabase project access
+npx supabase projects list
+
+# Audit user permissions in Supabase dashboard
+```
+
+### SSL/TLS Certificates
+
+- **Fly.io**: Automatic SSL certificates for custom domains
+- **Vercel**: Automatic HTTPS for all deployments
+- **Supabase**: HTTPS enforced by default
+
+## Troubleshooting Deployments
+
+### Common Issues
+
+#### CoAP Bridge Deployment Fails
+
+```bash
+# Check Docker build logs
+flyctl logs --app flyio-nbiot
+
+# Common causes:
+# - Missing requirements.txt
+# - Python import errors
+# - Environment variable issues
+
+# Debug locally
+docker build -t coap-bridge .
+docker run -p 5683:5683 coap-bridge
+```
+
+#### Dashboard Build Fails
+
+```bash
+# Check for TypeScript errors
+npm run build 2>&1 | grep error
+
+# Common causes:
+# - Missing environment variables
+# - TypeScript type errors
+# - Missing dependencies
+
+# Test build locally
+npm run build
+npm run preview
+```
+
+#### Edge Function Deployment Fails
+
+```bash
+# Check function syntax
+npx supabase functions verify ingest-sensor-data
+
+# View deployment logs
+npx supabase functions logs ingest-sensor-data
+
+# Common causes:
+# - JavaScript/TypeScript syntax errors
+# - Missing imports
+# - Environment variable issues
+```
+
+### Performance Issues
+
+```bash
+# CoAP Bridge: Monitor resource usage
+flyctl metrics --app flyio-nbiot
+
+# Scale up if needed
+flyctl scale memory 512 --app flyio-nbiot
+flyctl scale cpu 2 --app flyio-nbiot
+
+# Database: Check query performance in Supabase dashboard
+# Optimize slow queries
+# Add database indexes if needed
+```
+
+## Automated Deployment (CI/CD)
+
+### GitHub Actions Example
+
+```yaml
+# .github/workflows/deploy.yml
+name: Deploy MOC-IoT System
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy-coap-bridge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup Fly.io
+        uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Deploy to Fly.io
+        run: flyctl deploy --app flyio-nbiot
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+  deploy-dashboard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - name: Build Dashboard
+        run: |
+          cd Dashboard
+          npm install
+          npm run build
+      # Deploy to your hosting platform
+```
+
+This completes the comprehensive deployment guide for all MOC-IoT system components.

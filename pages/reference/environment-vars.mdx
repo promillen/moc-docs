@@ -1,0 +1,430 @@
+# Environment Variables Reference
+
+This document lists all environment variables used across the MOC-IoT system components, including their purposes, required values, and security considerations.
+
+## CoAP Bridge (Fly.io)
+
+The CoAP bridge server requires these environment variables for operation.
+
+### Required Variables
+
+#### SUPABASE_URL
+- **Purpose**: Supabase project URL for database connections
+- **Value**: `https://cdwtsrzshpotkfbyyyjk.supabase.co`
+- **Usage**: Used by `store_to_supabase.py` for HTTP requests to Supabase REST API
+- **Security**: Public value, safe to expose
+
+```bash
+flyctl secrets set SUPABASE_URL="https://cdwtsrzshpotkfbyyyjk.supabase.co" --app flyio-nbiot
+```
+
+#### SUPABASE_API_KEY
+- **Purpose**: Service role key for database write access
+- **Value**: `eyJ...` (service role key, not anon key)
+- **Usage**: Authentication for Supabase REST API calls
+- **Security**: **CRITICAL SECRET** - service role has full database access
+
+```bash
+flyctl secrets set SUPABASE_API_KEY="[SERVICE_ROLE_KEY]" --app flyio-nbiot
+```
+
+**⚠️ Important**: Must use the **service role key** for write permissions. The anon key only allows read access.
+
+### Optional Variables
+
+#### LOG_LEVEL
+- **Purpose**: Control logging verbosity
+- **Values**: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`
+- **Default**: `INFO`
+- **Usage**: Python logging configuration in `main.py`
+
+```bash
+flyctl secrets set LOG_LEVEL="DEBUG" --app flyio-nbiot
+```
+
+#### PYTHONUNBUFFERED
+- **Purpose**: Ensure Python output is not buffered (for Docker logs)
+- **Value**: `1`
+- **Default**: Set in Dockerfile
+- **Usage**: Python runtime configuration
+
+#### APP_NAME
+- **Purpose**: Application identification in logs
+- **Value**: `flyio-nbiot`
+- **Usage**: Optional logging metadata
+
+### Verifying Environment Variables
+
+```bash
+# List all secrets (values are hidden)
+flyctl secrets list --app flyio-nbiot
+
+# SSH into container to check environment
+flyctl ssh console --app flyio-nbiot
+echo $SUPABASE_URL
+echo "API key set: $([ -n "$SUPABASE_API_KEY" ] && echo "YES" || echo "NO")"
+```
+
+## Supabase Edge Functions
+
+Edge functions have access to environment variables set in the Supabase dashboard.
+
+### Required Variables
+
+#### FLY_INGEST_SECRET
+- **Purpose**: HMAC secret for verifying requests from CoAP bridge
+- **Value**: Random 32-byte hex string
+- **Usage**: HMAC-SHA256 signature verification in `ingest-sensor-data` function
+- **Security**: **CRITICAL SECRET** - used for request authentication
+
+```bash
+# Generate new secret
+openssl rand -hex 32
+
+# Set in Supabase dashboard under Project Settings > Edge Functions > Secrets
+FLY_INGEST_SECRET=abc123def456...
+```
+
+#### HERE_API_KEY
+- **Purpose**: HERE Positioning API access for location processing
+- **Value**: HERE developer API key
+- **Usage**: WiFi/cellular positioning requests
+- **Security**: **SECRET** - HERE API usage tracking and billing
+
+```bash
+# Set in Supabase dashboard
+HERE_API_KEY=your_here_api_key_here
+```
+
+### Optional Variables
+
+#### DEBUG_MODE
+- **Purpose**: Enable detailed logging in edge functions
+- **Value**: `true` or `false`
+- **Default**: `false`
+- **Usage**: Control debug output in edge function logs
+
+#### RATE_LIMIT_REQUESTS
+- **Purpose**: Rate limiting configuration
+- **Value**: Number (requests per minute per device)
+- **Default**: `100`
+- **Usage**: Prevent abuse from individual devices
+
+### Accessing Edge Function Variables
+
+```typescript
+// In edge function code
+const secret = Deno.env.get('FLY_INGEST_SECRET');
+const hereApiKey = Deno.env.get('HERE_API_KEY');
+const debugMode = Deno.env.get('DEBUG_MODE') === 'true';
+```
+
+## React Dashboard
+
+The dashboard uses environment variables for client-side configuration.
+
+### Required Variables
+
+#### VITE_SUPABASE_URL
+- **Purpose**: Supabase project URL for client connections
+- **Value**: `https://cdwtsrzshpotkfbyyyjk.supabase.co`
+- **Usage**: Supabase client initialization
+- **Security**: Public value, embedded in client bundle
+
+```bash
+# .env.local or build environment
+VITE_SUPABASE_URL=https://cdwtsrzshpotkfbyyyjk.supabase.co
+```
+
+#### VITE_SUPABASE_ANON_KEY
+- **Purpose**: Anonymous key for client-side Supabase access
+- **Value**: `eyJ...` (anon key with RLS enforcement)
+- **Usage**: Client-side authentication and API access
+- **Security**: Public key, safe to expose (RLS protects data)
+
+```bash
+VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+### Optional Variables
+
+#### VITE_DEBUG
+- **Purpose**: Enable debug logging in browser console
+- **Value**: `true` or `false`
+- **Default**: `false`
+- **Usage**: Development debugging
+
+#### VITE_API_BASE_URL
+- **Purpose**: Override API base URL for development
+- **Value**: URL string
+- **Default**: Derived from VITE_SUPABASE_URL
+- **Usage**: Local development against different backend
+
+```bash
+# For local development
+VITE_API_BASE_URL=http://localhost:54321
+```
+
+### Build Environment
+
+```typescript
+// vite-env.d.ts
+interface ImportMetaEnv {
+  readonly VITE_SUPABASE_URL: string;
+  readonly VITE_SUPABASE_ANON_KEY: string;
+  readonly VITE_DEBUG?: string;
+  readonly VITE_API_BASE_URL?: string;
+}
+```
+
+## Documentation Site (Nextra)
+
+The documentation site uses the same Supabase configuration as the dashboard.
+
+### Required Variables
+
+#### NEXT_PUBLIC_SUPABASE_URL
+- **Purpose**: Supabase URL for authentication
+- **Value**: `https://cdwtsrzshpotkfbyyyjk.supabase.co`
+- **Usage**: User authentication for docs access
+- **Security**: Public value
+
+#### NEXT_PUBLIC_SUPABASE_ANON_KEY
+- **Purpose**: Anon key for client authentication
+- **Value**: Same anon key as dashboard
+- **Usage**: User role verification
+- **Security**: Public key with RLS protection
+
+### Deployment Environment (Vercel)
+
+Set these in Vercel dashboard under Project Settings > Environment Variables:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=https://cdwtsrzshpotkfbyyyjk.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+## Security Best Practices
+
+### Secret Rotation
+
+#### HMAC Secrets
+
+```bash
+# Generate new HMAC secret
+NEW_SECRET=$(openssl rand -hex 32)
+
+# Update in both systems
+flyctl secrets set FLY_INGEST_SECRET="$NEW_SECRET" --app flyio-nbiot
+# Update FLY_INGEST_SECRET in Supabase dashboard
+```
+
+#### API Keys
+
+```bash
+# Rotate Supabase service key (in Supabase dashboard)
+# Generate new key and update in Fly.io
+flyctl secrets set SUPABASE_API_KEY="[NEW_SERVICE_KEY]" --app flyio-nbiot
+
+# Rotate HERE API key (in HERE developer portal)
+# Update in Supabase edge function secrets
+```
+
+### Environment Isolation
+
+| Environment | CoAP Bridge | Dashboard | Edge Functions | Purpose |
+|-------------|-------------|-----------|----------------|---------|
+| **Production** | flyio-nbiot.fly.dev | Live dashboard URL | Production project | Live system |
+| **Staging** | staging-coap.fly.dev | Staging dashboard | Staging project | Testing |
+| **Development** | localhost:5683 | localhost:8080 | Local functions | Local dev |
+
+### Access Control
+
+#### Fly.io Secrets
+- Only developers with Fly.io access can view/modify secrets
+- Use `flyctl` CLI with authentication token
+- Audit secret access through Fly.io dashboard
+
+#### Supabase Secrets
+- Edge function secrets visible to project members only
+- RLS policies protect database access even with keys
+- Audit access through Supabase dashboard
+
+#### Client Environment Variables
+- Public variables are embedded in client bundle
+- Never store secrets in client-side environment variables
+- Use server-side proxies for sensitive API calls
+
+## Development Setup
+
+### Local Development Environment
+
+Create `.env.local` files for each component:
+
+#### CoAP Bridge (.env.local)
+```bash
+SUPABASE_URL=https://cdwtsrzshpotkfbyyyjk.supabase.co
+SUPABASE_API_KEY=[DEV_SERVICE_KEY]
+LOG_LEVEL=DEBUG
+```
+
+#### Dashboard (.env.local)
+```bash
+VITE_SUPABASE_URL=https://cdwtsrzshpotkfbyyyjk.supabase.co
+VITE_SUPABASE_ANON_KEY=[DEV_ANON_KEY]
+VITE_DEBUG=true
+```
+
+#### Documentation (.env.local)
+```bash
+NEXT_PUBLIC_SUPABASE_URL=https://cdwtsrzshpotkfbyyyjk.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=[DEV_ANON_KEY]
+```
+
+### Environment Validation Scripts
+
+#### CoAP Bridge Validation
+```python
+#!/usr/bin/env python3
+# validate_env.py
+
+import os
+import sys
+
+def validate_coap_bridge_env():
+    """Validate CoAP bridge environment variables"""
+    required = {
+        'SUPABASE_URL': 'https://cdwtsrzshpotkfbyyyjk.supabase.co',
+        'SUPABASE_API_KEY': 'service role key'
+    }
+    
+    optional = {
+        'LOG_LEVEL': 'DEBUG, INFO, WARNING, ERROR, CRITICAL'
+    }
+    
+    print("🔍 Validating CoAP Bridge Environment")
+    
+    # Check required
+    for var, desc in required.items():
+        value = os.getenv(var)
+        if not value:
+            print(f"❌ Missing required variable: {var} ({desc})")
+            sys.exit(1)
+        else:
+            # Hide sensitive values
+            display_value = value if 'URL' in var else '[SET]'
+            print(f"✅ {var}: {display_value}")
+    
+    # Check optional
+    for var, desc in optional.items():
+        value = os.getenv(var)
+        if value:
+            print(f"✅ {var}: {value}")
+        else:
+            print(f"⚠️  Optional {var} not set ({desc})")
+    
+    print("✅ Environment validation complete")
+
+if __name__ == "__main__":
+    validate_coap_bridge_env()
+```
+
+#### Dashboard Validation
+```typescript
+// validate-env.ts
+const requiredVars = [
+  'VITE_SUPABASE_URL',
+  'VITE_SUPABASE_ANON_KEY'
+];
+
+const validateEnvironment = () => {
+  console.log('🔍 Validating Dashboard Environment');
+  
+  let hasErrors = false;
+  
+  requiredVars.forEach(varName => {
+    const value = import.meta.env[varName];
+    if (!value) {
+      console.error(`❌ Missing required variable: ${varName}`);
+      hasErrors = true;
+    } else {
+      console.log(`✅ ${varName}: ${value.substring(0, 20)}...`);
+    }
+  });
+  
+  if (hasErrors) {
+    throw new Error('Environment validation failed');
+  }
+  
+  console.log('✅ Environment validation complete');
+};
+
+// Run validation during app initialization
+export { validateEnvironment };
+```
+
+## Troubleshooting Environment Issues
+
+### Common Problems
+
+#### 1. CoAP Bridge Cannot Connect to Supabase
+```bash
+# Check environment variables
+flyctl ssh console --app flyio-nbiot
+env | grep SUPABASE
+
+# Test connection
+curl -H "Authorization: Bearer $SUPABASE_API_KEY" \
+     "$SUPABASE_URL/rest/v1/device_config?select=devid&limit=1"
+```
+
+#### 2. Dashboard Authentication Fails
+```typescript
+// Check environment variables in browser console
+console.log('SUPABASE_URL:', import.meta.env.VITE_SUPABASE_URL);
+console.log('ANON_KEY set:', !!import.meta.env.VITE_SUPABASE_ANON_KEY);
+
+// Test Supabase connection
+import { supabase } from './lib/supabase';
+const { data, error } = await supabase.auth.getSession();
+console.log('Session:', data, error);
+```
+
+#### 3. HMAC Verification Fails
+```bash
+# Verify HMAC secret matches between systems
+# Check Fly.io secret
+flyctl secrets list --app flyio-nbiot | grep FLY_INGEST_SECRET
+
+# Check Supabase edge function logs for HMAC errors
+npx supabase functions logs ingest-sensor-data | grep HMAC
+```
+
+### Environment Debugging Tools
+
+```bash
+# Create environment debugging script
+#!/bin/bash
+# debug-env.sh
+
+echo "=== MOC-IoT Environment Debug ==="
+echo
+
+echo "🖥️  CoAP Bridge (Fly.io)"
+flyctl secrets list --app flyio-nbiot
+echo
+
+echo "🌐 Dashboard Environment"
+cd Dashboard && npm run build 2>&1 | head -10
+echo
+
+echo "📚 Documentation Environment"  
+cd ../Docs && npm run build 2>&1 | head -10
+echo
+
+echo "🗄️  Supabase Connection Test"
+curl -H "Authorization: Bearer $SUPABASE_API_KEY" \
+     "$SUPABASE_URL/rest/v1/" 2>/dev/null && echo "✅ Connected" || echo "❌ Failed"
+```
+
+This comprehensive environment variables reference ensures proper configuration and security across all MOC-IoT system components.

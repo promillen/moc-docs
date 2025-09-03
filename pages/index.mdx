@@ -1,54 +1,65 @@
-# IoT Device Management System - Internal Documentation
+# MOC-IoT Device Tracking System - Technical Documentation
 
-Welcome to the internal documentation for our IoT Device Management System. This documentation covers the complete architecture, APIs, and operational procedures for the system.
+Internal documentation for the MOC-IoT device tracking system. This serves as both a deployment guide and protocol reference for firmware and backend development.
 
-## System Overview
+## System Architecture
 
-Our IoT Device Management System provides real-time tracking and monitoring of IoT devices through a multi-tier architecture:
+The MOC-IoT system uses a straightforward data pipeline:
 
-- **Device Layer**: IoT devices sending sensor data via CoAP
-- **Ingestion Layer**: Fly.io Python server handling CoAP-to-HTTPS translation
-- **Processing Layer**: Supabase Edge Functions for data processing and location services
-- **Storage Layer**: Supabase PostgreSQL with Row Level Security
-- **Frontend Layer**: React dashboard for device monitoring and management
+```
+IoT Devices → CoAP/UDP:5683 → Fly.io Python Server → HTTPS/HMAC → Supabase Edge Functions → PostgreSQL → React Dashboard
+```
 
-## Quick Start
+### Core Components
 
-For development and operational tasks, refer to these quick links:
+- **IoT Devices**: Send sensor data via CoAP over NB-IoT/LTE cellular networks using Protocol Buffers
+- **CoAP Bridge**: Python 3.11 server on Fly.io processes CoAP messages and forwards to Supabase
+- **Supabase Backend**: Edge functions handle data ingestion, PostgreSQL stores device data
+- **React Dashboard**: Real-time monitoring interface built with TypeScript and shadcn-ui
 
-- [System Architecture](/architecture/overview) - High-level system design
-- [API Documentation](/api-docs/edge-function) - HTTP API specifications
-- [Local Setup](/development-guide) - Development environment setup
-- [Deployment Guide](/flyio-setup) - Production deployment procedures
-- [Troubleshooting](/operations/troubleshooting) - Common issues and solutions
+## Quick Reference
 
-## Key Features
+### For Firmware Development
+- [Protocol Specifications](/architecture/protocol-specs) - Protobuf message structures and CoAP endpoints
+- [Development Guide](/development/firmware-guide) - Message construction and testing procedures
 
-- **Real-time Location Tracking**: GNSS, Wi-Fi, and cellular positioning
-- **Secure Data Ingestion**: HMAC signature verification for all device data
-- **Role-based Access Control**: Admin, developer, moderator, and user permission levels
-- **Interactive Dashboard**: Live device status and location visualization
-- **Scalable Architecture**: Auto-scaling Fly.io infrastructure with Supabase backend
+### For Backend Operations  
+- [CoAP Bridge Deployment](/architecture/coap-bridge) - Fly.io deployment and monitoring
+- [API Specifications](/api-docs/edge-function) - Supabase Edge Function interfaces
+- [Database Schema](/reference/database-schema) - Table structures and relationships
 
-## Security Model
+### For Dashboard Development
+- [Dashboard Integration](/architecture/dashboard) - React frontend architecture and real-time updates
 
-The system implements multiple security layers:
+## Technology Stack
 
-- **Device Authentication**: HMAC-SHA256 signature verification
-- **Transport Security**: HTTPS/TLS encryption for all API communications
-- **Access Control**: JWT-based authentication with Row Level Security (RLS)
-- **Data Validation**: Schema validation and input sanitization
-- **Network Security**: Rate limiting and DDoS protection
+### Communication Protocol
+- **CoAP (UDP:5683)**: Lightweight protocol optimized for IoT devices
+- **Protocol Buffers**: Efficient binary message serialization  
+- **HMAC-SHA256**: Message authentication and integrity verification
 
-## Support & Maintenance
+### Infrastructure
+- **Fly.io**: Container hosting for the CoAP bridge server
+- **Supabase**: PostgreSQL database with Edge Functions and real-time subscriptions
+- **NB-IoT/LTE**: Cellular connectivity for device communication
 
-For system support and maintenance issues:
+### Frontend
+- **React 18** with TypeScript and Vite
+- **shadcn-ui** components with Tailwind CSS
+- **TanStack Query** for state management and caching
+- **Leaflet** for interactive device location mapping
 
-1. Check the [Monitoring](/operations/monitoring) section for system health
-2. Review [Troubleshooting](/operations/troubleshooting) for common solutions
-3. Consult [Change Log](/reference/changelog) for recent updates
-4. Contact the engineering team for escalation
+## Data Flow Overview
 
----
+1. **Device Transmission**: IoT devices encode sensor data using Protocol Buffers and send via CoAP
+2. **Bridge Processing**: Fly.io Python server receives CoAP messages, validates protobuf structure
+3. **Data Forwarding**: Server converts to JSON and forwards to Supabase Edge Functions with HMAC signature
+4. **Backend Processing**: Edge functions validate HMAC, process location data via HERE API, store in PostgreSQL
+5. **Real-time Updates**: Supabase notifies dashboard clients via WebSocket subscriptions
+6. **Dashboard Display**: React frontend updates device status, location markers, and sensor readings
 
-**Version**: 1.0.0
+## Getting Started
+
+1. **Firmware Development**: Start with [Protocol Specifications](/architecture/protocol-specs) to understand message formats
+2. **Backend Setup**: Review [CoAP Bridge Deployment](/architecture/coap-bridge) for server configuration
+3. **Testing**: Use [Development Guide](/development/firmware-guide) for local testing procedures

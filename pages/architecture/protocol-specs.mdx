@@ -1,0 +1,367 @@
+# Protocol Specifications
+
+This section defines the communication protocol between IoT devices and the MOC-IoT system, including Protocol Buffer message formats and CoAP endpoint specifications.
+
+## CoAP Protocol Overview
+
+### Endpoint Configuration
+- **Server**: `flyio-nbiot.fly.dev`
+- **Port**: `5683` (UDP)
+- **Protocol**: CoAP (RFC 7252)
+- **Method**: `POST`
+- **Path**: `/data`
+- **Content-Type**: `application/octet-stream` (Protocol Buffers)
+
+### Message Flow
+1. Device encodes data using Protocol Buffers
+2. Device sends CoAP POST to `/data` endpoint
+3. Server validates and processes protobuf message
+4. Server forwards processed data to Supabase
+5. Optional downlink response (future feature)
+
+## Protocol Buffer Message Definitions
+
+The system uses Protocol Buffers for efficient binary serialization. All messages follow the `Uplink` structure defined below.
+
+### Main Uplink Message
+
+```protobuf
+message Uplink {
+  Heartbeat heartbeat = 1;
+  Location location = 2;
+  uint32 uplink_count = 3;
+}
+```
+
+### Heartbeat Message (Device Status)
+
+```protobuf
+message Heartbeat {
+  Config config = 1;
+  Activity activity = 2;
+  Reboot reboot = 3;
+  uint32 modem_temperature = 4;  // Temperature in Celsius
+}
+```
+
+### Configuration Message
+
+```protobuf
+message Config {
+  uint32 dev_id = 1;                    // Device ID (numeric)
+  uint32 heartbeat_interval = 2;        // Seconds between heartbeats
+  string iccid = 3;                     // SIM card identifier
+  string hw_version = 4;                // Hardware version string
+  string sw_version = 5;                // Software version string
+  LocationMode location_mode = 6;       // Location mode setting
+}
+
+enum LocationMode {
+  NONE = 0;
+  GPS = 1;
+  WIFI = 2;
+  GNSS_WIFI = 3;
+  WIFI_GNSS = 4;
+}
+```
+
+### Activity Message (Power Consumption)
+
+```protobuf
+message Activity {
+  uint32 sleep = 1;      // Sleep mode duration (seconds)
+  uint32 modem = 2;      // Modem active duration (seconds)  
+  uint32 gnss = 3;       // GNSS active duration (seconds)
+  uint32 wifi = 4;       // WiFi scanning duration (seconds)
+  uint32 other = 5;      // Other operations duration (seconds)
+}
+```
+
+### Reboot Message (System Events)
+
+```protobuf
+message Reboot {
+  RebootReason reason = 1;    // Reason for last reboot
+  string file = 2;            // Source file (if crash)
+  uint32 line = 3;            // Line number (if crash)
+}
+
+enum RebootReason {
+  UNKNOWN = 0;
+  SOFTWARE = 1;       // Intentional software reboot
+  ASSERT = 2;         // Assertion failure
+  RTC_WAKEUP = 3;     // RTC timer wakeup
+  POWER_ON = 4;       // Power-on reset
+  WATCHDOG = 5;       // Watchdog timer reset
+}
+```
+
+### Location Message
+
+```protobuf
+message Location {
+  repeated WiFi wifi = 1;     // WiFi access points detected
+}
+
+message WiFi {
+  string mac = 1;             // MAC address (e.g., "AA:BB:CC:DD:EE:FF")
+  int32 rssi = 2;             // Signal strength in dBm
+}
+```
+
+## Message Construction Examples
+
+### C/C++ Example (Firmware)
+
+```cpp
+#include "uplink.pb.h"
+#include <pb_encode.h>
+
+// Create and populate uplink message
+uplink_Uplink uplink = uplink_Uplink_init_zero;
+uplink.uplink_count = message_counter++;
+
+// Configure device settings
+uplink.heartbeat.config.dev_id = 12345;
+uplink.heartbeat.config.heartbeat_interval = 3600;  // 1 hour
+strcpy(uplink.heartbeat.config.iccid, "89461177711234567890");
+strcpy(uplink.heartbeat.config.hw_version, "v1.2");  
+strcpy(uplink.heartbeat.config.sw_version, "v2.1.0");
+uplink.heartbeat.config.location_mode = uplink_LocationMode_GNSS_WIFI;
+
+// Set activity data (power consumption tracking)
+uplink.heartbeat.activity.sleep = 3540;    // 59 minutes sleep
+uplink.heartbeat.activity.modem = 45;      // 45 seconds modem active
+uplink.heartbeat.activity.gnss = 10;       // 10 seconds GPS active
+uplink.heartbeat.activity.wifi = 5;        // 5 seconds WiFi scanning
+
+// Add WiFi data if available
+uplink.location.wifi_count = 2;
+strcpy(uplink.location.wifi[0].mac, "AA:BB:CC:DD:EE:FF");
+uplink.location.wifi[0].rssi = -45;
+strcpy(uplink.location.wifi[1].mac, "11:22:33:44:55:66");
+uplink.location.wifi[1].rssi = -67;
+
+// Encode message
+uint8_t buffer[256];
+pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
+bool status = pb_encode(&stream, uplink_Uplink_fields, &uplink);
+
+if (status) {
+    // Send via CoAP
+    coap_send_message(buffer, stream.bytes_written);
+}
+```
+
+### Python Example (Testing)
+
+```python
+import uplink_pb2
+import socket
+
+# Create uplink message
+uplink = uplink_pb2.Uplink()
+uplink.uplink_count = 42
+
+# Set device configuration
+config = uplink.heartbeat.config
+config.dev_id = 12345
+config.heartbeat_interval = 3600
+config.iccid = "89461177711234567890"
+config.hw_version = "v1.2"
+config.sw_version = "v2.1.0"
+config.location_mode = uplink_pb2.LocationMode.GNSS_WIFI
+
+# Set activity data
+activity = uplink.heartbeat.activity
+activity.sleep = 3540
+activity.modem = 45
+activity.gnss = 10
+activity.wifi = 5
+
+# Add WiFi locations
+wifi1 = uplink.location.wifi.add()
+wifi1.mac = "AA:BB:CC:DD:EE:FF"
+wifi1.rssi = -45
+
+wifi2 = uplink.location.wifi.add()  
+wifi2.mac = "11:22:33:44:55:66"
+wifi2.rssi = -67
+
+# Serialize and send
+serialized = uplink.SerializeToString()
+print(f"Message size: {len(serialized)} bytes")
+
+# Send via CoAP (using aiocoap library)
+import asyncio
+from aiocoap import *
+
+async def send_coap_message():
+    context = await Context.create_client_context()
+    request = Message(code=POST, payload=serialized, uri="coap://flyio-nbiot.fly.dev:5683/data")
+    
+    try:
+        response = await context.request(request).response
+        print(f"CoAP Response: {response.code}")
+    except Exception as e:
+        print(f"CoAP Error: {e}")
+
+# asyncio.run(send_coap_message())
+```
+
+## Data Processing Pipeline
+
+### Server-Side Processing (Python)
+
+The CoAP bridge processes messages as follows:
+
+```python
+# main.py - CoAP message handler
+async def render_post(self, request):
+    try:
+        # Parse protobuf message
+        uplink = uplink_pb2.Uplink()
+        uplink.ParseFromString(request.payload)
+        
+        # Extract device ID
+        dev_id = uplink.heartbeat.config.dev_id if uplink.heartbeat else None
+        
+        # Process each message component
+        if uplink.heartbeat:
+            await self.process_heartbeat(uplink.heartbeat, dev_id)
+        
+        if uplink.location:
+            await self.process_location(uplink.location, dev_id)
+            
+        # Send acknowledgment
+        return Message(code=CHANGED)
+        
+    except Exception as e:
+        logger.error(f"Message processing failed: {e}")
+        return Message(code=BAD_REQUEST)
+```
+
+### Database Storage Format
+
+The processed data is stored in Supabase tables:
+
+```sql
+-- device_config table
+INSERT INTO device_config (devid, heartbeat_interval, iccid, hw_version, sw_version, location_mode) 
+VALUES ('12345', 3600, '89461177711234567890', 'v1.2', 'v2.1.0', 'GNSS_WIFI');
+
+-- activity table  
+INSERT INTO activity (devid, sleep_duration, modem_duration, gnss_duration, wifi_duration)
+VALUES ('12345', 3540, 45, 10, 5);
+
+-- sensor_data table (for location data)
+INSERT INTO sensor_data (devid, data_type, data) 
+VALUES ('12345', 'wifi_scan', '{"access_points": [{"mac": "AA:BB:CC:DD:EE:FF", "rssi": -45}]}');
+```
+
+## Message Validation Rules
+
+### Required Fields
+- `uplink_count`: Must be present and increment with each message
+- `heartbeat.config.dev_id`: Device identifier (required for all messages)
+
+### Data Validation
+- **Device ID**: Must be numeric, 1-9999999
+- **MAC Addresses**: Must follow format "XX:XX:XX:XX:XX:XX" 
+- **RSSI Values**: Typically -30 to -100 dBm
+- **Timestamps**: Unix timestamp format
+- **Version Strings**: Max 32 characters, alphanumeric + dots
+
+### Message Size Limits
+- **Maximum Message Size**: 512 bytes (CoAP limit)
+- **Typical Message Size**: 50-150 bytes
+- **WiFi Entries**: Limit to 20 access points per message
+
+## Error Handling
+
+### CoAP Response Codes
+- **2.04 Changed**: Message processed successfully
+- **4.00 Bad Request**: Invalid protobuf format or missing required fields
+- **5.00 Internal Server Error**: Server processing error
+
+### Client-Side Error Handling
+
+```cpp
+// C/C++ error handling example
+typedef enum {
+    COAP_SUCCESS = 0,
+    COAP_TIMEOUT = 1,
+    COAP_ERROR = 2,
+    COAP_BAD_REQUEST = 3
+} coap_result_t;
+
+coap_result_t send_sensor_data(uint8_t* data, size_t len) {
+    // Implement CoAP client with retry logic
+    int retries = 3;
+    
+    while (retries > 0) {
+        coap_result_t result = coap_post("/data", data, len);
+        
+        if (result == COAP_SUCCESS) {
+            return COAP_SUCCESS;
+        }
+        
+        if (result == COAP_BAD_REQUEST) {
+            // Don't retry bad requests
+            return result;
+        }
+        
+        retries--;
+        delay(1000);  // Wait 1 second before retry
+    }
+    
+    return COAP_TIMEOUT;
+}
+```
+
+## Testing and Debugging
+
+### Message Inspection Tools
+
+```bash
+# Install protobuf tools
+pip install protobuf
+
+# Decode binary message (Python)
+python3 -c "
+import uplink_pb2
+import sys
+
+with open('message.bin', 'rb') as f:
+    data = f.read()
+    
+uplink = uplink_pb2.Uplink()
+uplink.ParseFromString(data)
+print(uplink)
+"
+
+# View message in hex format
+hexdump -C message.bin
+```
+
+### CoAP Testing Tools
+
+```bash
+# Install CoAP client
+pip install aiocoap[all]
+
+# Send test message
+coap-client -m POST -f message.bin coap://flyio-nbiot.fly.dev:5683/data
+
+# Monitor CoAP traffic (if running locally)
+tcpdump -i any -A port 5683
+```
+
+## Future Protocol Extensions
+
+### Planned Additions
+- **Downlink Messages**: Server-to-device configuration updates
+- **Sensor Data**: Temperature, humidity, soil moisture measurements  
+- **GPS Coordinates**: Direct GNSS position reporting
+- **Firmware Updates**: Over-the-air update mechanism
+- **Device Commands**: Remote control and configuration

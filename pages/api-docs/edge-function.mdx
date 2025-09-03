@@ -1,12 +1,13 @@
-# Edge Function API Specification
+# Supabase Edge Function API
 
 ## Overview
 
-The `ingest-sensor-data` Edge Function processes IoT device data sent via the Fly.io CoAP server. It handles location data processing, HMAC signature verification, and database storage.
+The `ingest-sensor-data` Edge Function is the primary data ingestion endpoint that processes IoT device data forwarded from the Fly.io CoAP bridge server.
 
-**Base URL**: `https://cdwtsrzshpotkfbyyyjk.supabase.co/functions/v1/`  
-**Function Path**: `/ingest-sensor-data`  
-**Method**: `POST`
+**Endpoint**: `https://cdwtsrzshpotkfbyyyjk.supabase.co/functions/v1/ingest-sensor-data`  
+**Method**: `POST`  
+**Authentication**: HMAC-SHA256 signature verification  
+**Content-Type**: `application/json`
 
 ## Authentication
 
