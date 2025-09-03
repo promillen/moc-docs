@@ -74,59 +74,99 @@ flowchart TD
 - **PostgreSQL**: Flexible JSON storage for diverse sensor data
 - **Authentication**: Built-in auth system with role-based access control
 
-## Data Flow Sequence
+## Data Flow Sequences
+
+### Device Heartbeat Flow
 
 ```mermaid
 sequenceDiagram
     participant Device as IoT Device
-    participant Fly as Fly.io CoAP Server
-    participant Edge as Supabase Edge Function
-    participant HERE as HERE Positioning API
-    participant DB as PostgreSQL Database
-    participant Dashboard as React Dashboard
+    participant Fly as Fly.io Server
+    participant Edge as Edge Function
+    participant DB as Database
+    participant Dashboard as Dashboard
 
-    Note over Device, Dashboard: Device Heartbeat Flow
     Device->>Fly: CoAP POST /data<br/>Protobuf: {config, activity, reboot}
-    Fly->>Fly: Parse protobuf message
-    Fly->>Edge: HTTP POST ingest-sensor-data<br/>JSON + HMAC signature
-    Edge->>Edge: Verify HMAC signature
-    Edge->>DB: INSERT device_config<br/>UPDATE activity, reboot tables
-    DB-->>Dashboard: Real-time notification via WebSocket
-    Dashboard->>Dashboard: Update device status
-
-    Note over Device, Dashboard: Location Data Flow  
-    Device->>Fly: CoAP POST /data<br/>Protobuf: {wifi[], cells[], gnss}
-    Fly->>Edge: HTTP POST ingest-sensor-data<br/>JSON + HMAC
-    Edge->>HERE: Position request<br/>WiFi/cellular/GNSS data
-    HERE-->>Edge: Location coordinates + accuracy
-    Edge->>DB: INSERT sensor_data<br/>type: location
-    DB-->>Dashboard: Real-time location update
-    Dashboard->>Dashboard: Update map markers
+    Note right of Fly: Parse protobuf<br/>Extract device data
+    Fly->>Edge: HTTP POST<br/>JSON + HMAC signature
+    Note right of Edge: Verify HMAC<br/>Validate payload
+    Edge->>DB: INSERT device_config<br/>INSERT activity, reboot
+    DB-->>Dashboard: Real-time WebSocket<br/>notification
+    Note right of Dashboard: Update device status<br/>Refresh UI components
 ```
 
-## Performance Characteristics
+### Location Data Processing
 
-### Expected Load
-- **Devices**: 100-10,000 IoT devices
-- **Message Rate**: 1-10 messages per device per hour
-- **Peak Load**: ~1000 messages per minute
-- **Data Retention**: 2+ years of sensor data
+```mermaid
+sequenceDiagram
+    participant Device as IoT Device
+    participant Fly as Fly.io Server
+    participant Edge as Edge Function
+    participant HERE as HERE API
+    participant DB as Database
+    participant Dashboard as Dashboard
+
+    Device->>Fly: CoAP POST /data<br/>Protobuf: {wifi[], cells[], gnss}
+    Fly->>Edge: HTTP POST<br/>WiFi/Cell data + HMAC
+    Edge->>HERE: Position request<br/>{wlan: [...], cell: [...]}
+    HERE-->>Edge: Location response<br/>{lat, lng, accuracy}
+    Edge->>DB: INSERT sensor_data<br/>type: 'location'
+    DB-->>Dashboard: Real-time update
+    Note right of Dashboard: Update map markers<br/>Show new device location
+```
+
+### Sensor Data Processing (Non-Geolocation)
+
+```mermaid
+sequenceDiagram
+    participant Device as Soil Sensor Device
+    participant Fly as Fly.io Server
+    participant Edge as Edge Function
+    participant DB as Database
+    participant Dashboard as Dashboard
+
+    Device->>Fly: CoAP POST /data<br/>Protobuf: {temperature, humidity, npk, ph}
+    Note right of Fly: Parse sensor data<br/>No location processing
+    Fly->>Edge: HTTP POST<br/>Sensor data + HMAC
+    Note right of Edge: Skip HERE API<br/>Direct storage
+    Edge->>DB: INSERT sensor_data<br/>type: 'soil_data'
+    DB-->>Dashboard: Real-time update
+    Note right of Dashboard: Update sensor charts<br/>No map changes
+```
+
+## Data Processing Logic
+
+### Message Type Routing
+The Edge Function automatically determines how to process incoming data based on message content:
+
+#### Location Data (Uses HERE API)
+- **Triggers**: Messages containing `wifi[]`, `cells[]`, or `gnss` data
+- **Processing**: Sent to HERE Positioning API for coordinate calculation
+- **Storage**: Results stored as `sensor_data` with `data_type: 'location'`
+- **Dashboard Impact**: Updates device location on map
+
+#### Sensor Data (Direct Storage)
+- **Triggers**: Messages containing sensor readings (temperature, humidity, soil data, etc.)
+- **Processing**: Direct validation and storage, no external APIs
+- **Storage**: Stored as `sensor_data` with appropriate `data_type` (e.g., 'soil_data', 'temperature')
+- **Dashboard Impact**: Updates sensor charts and readings
+
+#### Configuration Data (Device Management)
+- **Triggers**: Messages containing device configuration updates
+- **Processing**: Updates device metadata and settings
+- **Storage**: Updates `device_config` table
+- **Dashboard Impact**: Refreshes device status and information
 
 ### Response Times
 - **CoAP Processing**: < 50ms average
-- **Edge Function**: < 200ms including HERE API calls
+- **Edge Function**: < 200ms (with HERE API), < 50ms (sensor data only)
 - **Database Operations**: < 100ms for typical queries
 - **Dashboard Updates**: Real-time (< 1 second)
-
-### Scalability Limits
-- **Fly.io**: Auto-scaling based on CPU/memory usage
-- **Supabase**: 500+ concurrent connections, 2GB+ database
-- **HERE API**: 250,000 positioning requests per month (current plan)
 
 ## Security Architecture
 
 ### Device-to-Server Security
-- **No Device Authentication**: Devices identified by payload content
+- **Device Identification**: Devices identified by `dev_id` field in protobuf payload
 - **Message Integrity**: Payload validation via protobuf schema
 - **Network Security**: Cellular network encryption (LTE/NB-IoT)
 
@@ -137,6 +177,6 @@ sequenceDiagram
 
 ### Dashboard Security
 - **User Authentication**: Email/password via Supabase Auth
-- **Role-Based Access**: Admin, moderator, user roles with different permissions
+- **Role-Based Access**: Developer, admin, moderator, user roles with different permissions
 - **Row Level Security**: Database-level access control policies
 - **Session Management**: JWT tokens with configurable expiration

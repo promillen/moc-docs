@@ -150,7 +150,7 @@ User access control and permissions.
 CREATE TABLE user_roles (
   id BIGSERIAL PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES auth.users(id),
-  role TEXT NOT NULL,                  -- 'admin', 'moderator', 'user', 'developer'
+  role TEXT NOT NULL,                  -- 'developer', 'admin', 'moderator', 'user'
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   
@@ -165,8 +165,8 @@ CREATE INDEX idx_user_roles_role ON user_roles(role);
 **Role Hierarchy:**
 - `admin`: Full access to all data and user management
 - `moderator`: Read/write access to device data, limited user management
+- `developer`: Full access to development tools and documentation
 - `user`: Read-only access to device data
-- `developer`: Access to documentation and development tools
 
 ## Row Level Security (RLS) Policies
 
@@ -176,14 +176,14 @@ CREATE INDEX idx_user_roles_role ON user_roles(role);
 -- Enable RLS
 ALTER TABLE device_config ENABLE ROW LEVEL SECURITY;
 
--- Admin/Moderator full access
-CREATE POLICY "admin_moderator_all_access" ON device_config
+-- Admin/Moderator/Developer full access
+CREATE POLICY "admin_moderator_dev_all_access" ON device_config
   FOR ALL TO authenticated
   USING (
     EXISTS (
       SELECT 1 FROM user_roles 
       WHERE user_id = auth.uid() 
-      AND role IN ('admin', 'moderator')
+      AND role IN ('admin', 'moderator', 'developer')
     )
   );
 
@@ -205,14 +205,14 @@ CREATE POLICY "user_read_access" ON device_config
 -- Enable RLS
 ALTER TABLE sensor_data ENABLE ROW LEVEL SECURITY;
 
--- Admin/Moderator full access
-CREATE POLICY "admin_moderator_sensor_data" ON sensor_data
+-- Admin/Moderator/Developer full access
+CREATE POLICY "admin_moderator_dev_sensor_data" ON sensor_data
   FOR ALL TO authenticated
   USING (
     EXISTS (
       SELECT 1 FROM user_roles 
       WHERE user_id = auth.uid() 
-      AND role IN ('admin', 'moderator')
+      AND role IN ('admin', 'moderator', 'developer')
     )
   );
 
@@ -235,12 +235,12 @@ CREATE POLICY "user_read_sensor_data" ON sensor_data
 ALTER TABLE activity ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reboot ENABLE ROW LEVEL SECURITY;
 
--- Admin/Moderator policies
-CREATE POLICY "admin_moderator_activity" ON activity FOR ALL TO authenticated
-  USING (EXISTS (SELECT 1 FROM user_roles WHERE user_id = auth.uid() AND role IN ('admin', 'moderator')));
+-- Admin/Moderator/Developer policies
+CREATE POLICY "admin_moderator_dev_activity" ON activity FOR ALL TO authenticated
+  USING (EXISTS (SELECT 1 FROM user_roles WHERE user_id = auth.uid() AND role IN ('admin', 'moderator', 'developer')));
 
-CREATE POLICY "admin_moderator_reboot" ON reboot FOR ALL TO authenticated
-  USING (EXISTS (SELECT 1 FROM user_roles WHERE user_id = auth.uid() AND role IN ('admin', 'moderator')));
+CREATE POLICY "admin_moderator_dev_reboot" ON reboot FOR ALL TO authenticated
+  USING (EXISTS (SELECT 1 FROM user_roles WHERE user_id = auth.uid() AND role IN ('admin', 'moderator', 'developer')));
 
 -- User read-only policies
 CREATE POLICY "user_read_activity" ON activity FOR SELECT TO authenticated

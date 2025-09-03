@@ -109,6 +109,81 @@ message WiFi {
 }
 ```
 
+## Data Processing Types
+
+The MOC-IoT system handles different types of sensor data with different processing paths:
+
+### Location Data Processing (Uses HERE API)
+**Triggers**: Messages containing `wifi[]`, `cells[]`, or `gnss` data
+- WiFi access points are sent to HERE Positioning API
+- Cellular tower information processed for location
+- GNSS coordinates validated and enhanced
+- Results stored as `sensor_data` with `data_type: 'location'`
+- Updates device location on dashboard map
+
+### Sensor Data Processing (Direct Storage)
+**Triggers**: Messages containing sensor readings but no location data
+- Temperature, humidity, soil moisture, pH, NPK values
+- Battery status and voltage readings
+- Custom sensor data from various device types
+- Direct validation and storage, no external API calls
+- Results stored as `sensor_data` with appropriate `data_type` (e.g., 'soil_data', 'temperature', 'battery')
+- Updates sensor charts and readings on dashboard
+
+### Example Sensor Data Messages
+
+#### Soil Sensor Device
+```json
+{
+  "devid": "soil_001",
+  "uplink_count": 156,
+  "sensor_data": {
+    "temperature": 22.5,
+    "humidity": 68.2,
+    "ph": 6.8,
+    "npk": {
+      "nitrogen": 45,
+      "phosphorus": 23, 
+      "potassium": 67
+    },
+    "moisture": 72.3
+  }
+}
+```
+**Processing**: Direct storage as `data_type: 'soil_data'`, no HERE API call
+
+#### Temperature Sensor Device
+```json
+{
+  "devid": "temp_002", 
+  "uplink_count": 89,
+  "sensor_data": {
+    "temperature": 24.1,
+    "humidity": 55.3,
+    "pressure": 1013.25
+  }
+}
+```
+**Processing**: Direct storage as `data_type: 'environmental_data'`, no HERE API call
+
+#### Location + Sensor Combined
+```json
+{
+  "devid": "multi_003",
+  "uplink_count": 234,
+  "location": {
+    "wifi": [
+      {"mac": "AA:BB:CC:DD:EE:FF", "rssi": -45}
+    ]
+  },
+  "sensor_data": {
+    "battery": 87,
+    "temperature": 23.0
+  }
+}
+```
+**Processing**: WiFi data sent to HERE API for location, sensor data stored directly
+
 ## Message Construction Examples
 
 ### C/C++ Example (Firmware)

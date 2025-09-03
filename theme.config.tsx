@@ -1,5 +1,7 @@
 import React from 'react'
 import { DocsThemeConfig } from 'nextra-theme-docs'
+import Script from 'next/script'
+import './styles/mermaid.css'
 
 const LogoutButton = () => {
   const handleLogout = async () => {
@@ -42,7 +44,12 @@ const config: DocsThemeConfig = {
   },
   navbar: {
     extraContent: <LogoutButton />
-  }
+  },
+  head: (
+    <>
+      <Script src="/mermaid-zoom.js" strategy="afterInteractive" />
+    </>
+  )
 }
 
 export default config
