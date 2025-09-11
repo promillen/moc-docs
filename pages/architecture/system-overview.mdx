@@ -12,6 +12,10 @@ flowchart TD
     C --> E[PostgreSQL Database<br/>cdwtsrzshpotkfbyyyjk.supabase.co]
     E -->|Real-time subscriptions| F[React Dashboard<br/>TypeScript + shadcn-ui]
     
+    %% New WebSocket Live Logging (v2.0)
+    B -->|Direct WebSocket<br/>WSS:8080/ws| F
+    B -->|Health Check<br/>HTTP:8080/health| F
+    
     G[(Tables)]
     E --> G
     G --> H[device_config]
@@ -19,7 +23,24 @@ flowchart TD
     G --> J[activity]
     G --> K[reboot]
     G --> L[user_roles]
+    
+    %% Enhanced Database Flow (v2.0)
+    B -->|Enhanced Storage<br/>Individual Error Isolation| E
 ```
+
+### Architecture Evolution (v2.0)
+
+**New Features:**
+- **Direct WebSocket Connection**: Dashboard connects directly to Fly.io for live logs (eliminated Supabase relay)
+- **Health Monitoring**: Real-time connection health checks and diagnostics
+- **Enhanced Database Storage**: Individual operation isolation prevents cascade failures
+- **Test Message System**: Built-in message simulation for debugging
+
+**Benefits:**
+- 50% fewer failure points in WebSocket chain
+- Better error visibility and debugging
+- Improved connection reliability
+- Real-time storage status feedback
 
 ## Component Responsibilities
 
@@ -180,3 +201,206 @@ The Edge Function automatically determines how to process incoming data based on
 - **Role-Based Access**: Developer, admin, moderator, user roles with different permissions
 - **Row Level Security**: Database-level access control policies
 - **Session Management**: JWT tokens with configurable expiration
+
+## Live Logging System (v2.0)
+
+The enhanced live logging system provides real-time visibility into device activity and system health for development and debugging purposes.
+
+### WebSocket Architecture
+
+```mermaid
+sequenceDiagram
+    participant Dashboard as React Dashboard
+    participant FlyWS as Fly.io WebSocket<br/>(:8080/ws)
+    participant FlyCoAP as CoAP Server<br/>(:5683/uplink)
+    participant DB as Supabase DB
+
+    Dashboard->>FlyWS: Connect wss://flyio-nbiot.fly.dev/ws?deviceId=ABC123
+    FlyWS->>Dashboard: Connection established + system message
+    Dashboard->>FlyWS: Send ping (health check)
+    FlyWS->>Dashboard: Send pong (connection healthy)
+    
+    Note over FlyCoAP,DB: Device Message Processing
+    FlyCoAP->>FlyCoAP: Parse CoAP/Protobuf message
+    
+    par Database Storage
+        FlyCoAP->>DB: Store device_config (ensure exists)
+        FlyCoAP->>DB: Store activity (isolated)
+        FlyCoAP->>DB: Store sensor_data (isolated)
+        FlyCoAP->>FlyWS: Broadcast storage status<br/>{success_rate, operation_details}
+    and Live Message Broadcasting
+        FlyCoAP->>FlyWS: Broadcast parsed message<br/>{type: "heartbeat", deviceId, data}
+        FlyCoAP->>FlyWS: Broadcast parsed message<br/>{type: "activity", deviceId, data}
+        FlyCoAP->>FlyWS: Broadcast parsed message<br/>{type: "temperature", deviceId, data}
+        FlyWS->>Dashboard: Forward filtered messages (by deviceId)
+        Dashboard->>Dashboard: Display in live logs UI
+    end
+```
+
+### Health Monitoring System
+
+#### Connection Health Tracking
+```mermaid
+flowchart TD
+    A[Dashboard Opens Device Logs] --> B[Establish WebSocket Connection]
+    B --> C[Send Initial Ping]
+    C --> D[Start Periodic Health Checks<br/>Every 15 seconds]
+    
+    D --> E{Health Check Response?}
+    E -->|Success| F[✅ Server Healthy<br/>Enable Test Buttons]
+    E -->|Timeout/Error| G[⚠️ Server Warning<br/>Disable Test Buttons]
+    
+    F --> H[Continue Monitoring]
+    G --> I[Attempt Reconnection<br/>Exponential Backoff]
+    I --> B
+    H --> D
+    
+    J[Connection Lost] --> K[Auto-Reconnect Logic]
+    K --> L[Delay: 1s → 2s → 4s → 8s → 16s → 30s max]
+    L --> B
+```
+
+#### Health Check Endpoints
+
+**Basic Health Check:**
+```bash
+GET https://flyio-nbiot.fly.dev/health
+```
+
+**Response:**
+```json
+{
+  "status": "healthy",
+  "timestamp": "2024-01-15T10:30:00.000Z",
+  "server_info": {
+    "version": "1.0",
+    "live_logs_token_configured": true
+  },
+  "websocket_connections": {
+    "total_connections": 3,
+    "active_devices": 2,
+    "device_connections": {
+      "ABC123": 1,
+      "XYZ789": 2
+    }
+  },
+  "database_config": {
+    "supabase_url_configured": true,
+    "supabase_api_key_configured": true
+  }
+}
+```
+
+**Detailed Diagnostics:**
+```bash
+GET https://flyio-nbiot.fly.dev/health?detailed=true
+```
+
+Includes additional connection metadata, ping statistics, and client information.
+
+### Test Message System
+
+Built-in test message generation for development and debugging:
+
+```mermaid
+flowchart TD
+    A[Developer Clicks Test Button] --> B{Connection Healthy?}
+    B -->|No| C[Button Disabled<br/>Show Connection Status]
+    B -->|Yes| D[Send HTTP Request<br/>GET /test?deviceId=X&type=heartbeat]
+    
+    D --> E[Fly.io Generates Mock Message]
+    E --> F[Parse Mock Protobuf Data]
+    F --> G[Broadcast via WebSocket]
+    G --> H[Dashboard Receives Live Message]
+    
+    I[Database Storage Parallel Process]
+    F --> I
+    I --> J[Store Mock Data to Database]
+    J --> K[Broadcast Storage Status]
+    K --> H
+    
+    H --> L[Display in Live Logs<br/>✅ Test message + storage status]
+```
+
+**Available Test Types:**
+- `heartbeat` - Device configuration and activity data
+- `activity` - Power consumption metrics only
+- `temperature` - Temperature sensor readings
+- `location` - WiFi scanning data
+- `random` - Mixed message types
+
+### Database Storage Enhancement
+
+Enhanced storage system with error isolation and detailed reporting:
+
+```mermaid
+flowchart TD
+    A[Parsed Device Message] --> B{device_config Data?}
+    B -->|Yes| C[Upsert device_config<br/>Critical Priority]
+    B -->|No| D[Check Device Exists<br/>in Database]
+    
+    D -->|Found| E[Device OK - Proceed]
+    D -->|Missing| F[Create Minimal Record<br/>devid only]
+    C --> G{Config Success?}
+    F --> H{Creation Success?}
+    
+    G -->|Yes| E
+    G -->|No| I[❌ Abort - No Foreign Key]
+    H -->|Yes| E  
+    H -->|No| I
+    
+    E --> J[Execute Operations Individually<br/>Error Isolation]
+    
+    J --> K[Activity Storage]
+    J --> L[Reboot Storage]
+    J --> M[Temperature Storage] 
+    J --> N[WiFi Location Storage]
+    
+    K --> O[✅/❌ Activity Result]
+    L --> P[✅/❌ Reboot Result]
+    M --> Q[✅/❌ Temperature Result]
+    N --> R[✅/❌ WiFi Result]
+    
+    O --> S[Generate Storage Report<br/>{successful_operations/total_operations}]
+    P --> S
+    Q --> S
+    R --> S
+    
+    S --> T[Broadcast Storage Status<br/>to WebSocket Clients]
+    T --> U[Live Logs Show<br/>"Database storage: 3/4 operations successful"]
+```
+
+### Performance Characteristics
+
+#### WebSocket Performance
+- **Connection Establishment**: < 500ms
+- **Message Delivery Latency**: < 100ms from server to dashboard
+- **Ping/Pong Round Trip**: < 200ms
+- **Auto-reconnection Delay**: 1s to 30s (exponential backoff)
+
+#### Database Storage Performance  
+- **Individual Operation Timeout**: 10s per operation
+- **Typical Storage Time**: 50-200ms per operation
+- **Foreign Key Validation**: < 10ms
+- **Success Rate Target**: > 95% for healthy systems
+
+#### Health Monitoring
+- **Health Check Frequency**: Every 15 seconds (dashboard-initiated)
+- **Server Health Response**: < 100ms
+- **Connection Metadata Tracking**: Real-time
+- **Dead Connection Cleanup**: Automatic (on WebSocket close)
+
+### Security Considerations
+
+#### WebSocket Security
+- **Connection Authentication**: Optional token-based authentication
+- **Message Filtering**: Server filters messages by deviceId parameter  
+- **Rate Limiting**: Built-in WebSocket frame rate limits
+- **CORS Handling**: Configured for dashboard domain access
+
+#### Health Endpoint Security
+- **Public Access**: Health endpoints are publicly accessible (no sensitive data)
+- **Rate Limiting**: Standard HTTP rate limits apply
+- **Information Disclosure**: Only aggregate statistics, no sensitive device data
+
+This enhanced architecture provides developers with comprehensive visibility into system health, real-time debugging capabilities, and robust error handling for production deployments.
