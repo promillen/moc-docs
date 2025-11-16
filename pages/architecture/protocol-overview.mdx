@@ -1,0 +1,316 @@
+# Protocol Overview
+
+This page provides a high-level overview of the communication protocols used in the MOC-IoT system.
+
+## CoAP Protocol
+
+### Why CoAP?
+
+**CoAP (Constrained Application Protocol)** is designed specifically for IoT devices with limited resources:
+
+- **Lightweight**: Minimal protocol overhead for battery-powered devices
+- **UDP-based**: No connection setup overhead, ideal for intermittent connectivity
+- **Low bandwidth**: Critical for NB-IoT cellular networks with limited data
+- **RESTful design**: Familiar HTTP-like semantics (GET, POST, PUT, DELETE)
+- **Built-in reliability**: Optional confirmable messages with automatic retries
+
+### Endpoint Configuration
+
+**Production Server**:
+- Host: `flyio-nbiot.fly.dev`
+- Port: `5683` (UDP)
+- Protocol: CoAP (RFC 7252)
+- Method: `POST`
+- Path: `/data`
+- Content-Type: `application/octet-stream`
+
+### Message Transaction Flow
+
+1. **Encoding**: Device encodes data using Protocol Buffers
+2. **Transmission**: Device sends CoAP POST to `/data` endpoint over UDP
+3. **Reception**: Fly.io server receives and validates protobuf message
+4. **Processing**: Server parses message and forwards to Supabase
+5. **Acknowledgment**: Server sends CoAP ACK back to device
+6. **Future**: Optional downlink responses (configuration updates, commands)
+
+### CoAP Message Types
+
+**Confirmable (CON)**:
+- Requires acknowledgment from server
+- Automatic retries if no ACK received
+- Used for critical data transmission
+
+**Non-Confirmable (NON)**:
+- Fire-and-forget messages
+- No acknowledgment required
+- Lower overhead, suitable for frequent updates
+
+**Acknowledgment (ACK)**:
+- Response to confirmable messages
+- Can include payload (piggybacked response)
+
+## Protocol Buffers
+
+### Why Protocol Buffers?
+
+**Protocol Buffers** (protobuf) is Google's language-neutral data serialization format, chosen for:
+
+- **Compact size**: 3-10x smaller than equivalent JSON
+- **Type safety**: Strong typing prevents runtime errors
+- **Schema evolution**: Backward and forward compatibility
+- **Cross-language**: Code generation for C, Python, TypeScript, etc.
+- **Validation**: Built-in field presence and type checking
+
+### Message Structure Hierarchy
+
+```
+Uplink (root message)
+├── uplink_count (message counter)
+├── Heartbeat (device status)
+│   ├── Config (device configuration)
+│   ├── Activity (power consumption)
+│   └── Reboot (system events)
+├── Location (positioning data)
+│   ├── WiFi[] (access points)
+│   ├── Cells[] (cellular towers)
+│   └── GNSS (satellite positioning)
+└── SensorData (measurements)
+    └── Custom JSONB payloads
+```
+
+### Key Protobuf Concepts
+
+**Field Numbers**:
+- Unique identifier for each field (not the value)
+- Once assigned, never change (breaks compatibility)
+- Used for compact binary encoding
+
+**Optional vs Required**:
+- All fields are optional in proto3
+- Use `has_field` checks to determine presence
+- Allows for flexible message composition
+
+**Enumerations**:
+- Type-safe constants (e.g., `LocationMode`, `RebootReason`)
+- Default value is always `0`
+- Can add new values without breaking compatibility
+
+**Repeated Fields**:
+- Arrays of values (e.g., `repeated WiFi wifi`)
+- Variable-length lists
+- Efficient binary encoding
+
+## Message Categories
+
+The system processes three primary message categories:
+
+### 1. Heartbeat Messages
+
+**Purpose**: Periodic device status updates
+
+**Contains**:
+- Device identification (dev_id, ICCID)
+- Configuration settings (heartbeat interval, location mode)
+- Firmware versions (hardware, software)
+- Activity tracking (sleep, modem, GNSS, WiFi usage)
+- System events (reboot reasons, diagnostics)
+- Battery level and modem temperature
+
+**Frequency**: Configurable (default 1 hour)
+
+**Processing**: Direct storage in database, no external API calls
+
+### 2. Location Messages
+
+**Purpose**: Device positioning and movement tracking
+
+**Contains**:
+- WiFi access points (MAC addresses, RSSI)
+- Cellular towers (MCC, MNC, LAC, CID)
+- GNSS coordinates (latitude, longitude, accuracy)
+
+**Frequency**: On-demand or periodic based on location mode
+
+**Processing**:
+- WiFi/Cellular: Sent to HERE Positioning API for triangulation
+- GNSS: Direct coordinate validation and storage
+
+### 3. Sensor Data Messages
+
+**Purpose**: Domain-specific measurements
+
+**Contains**:
+- Environmental data (temperature, humidity, pressure)
+- Soil metrics (moisture, pH, NPK levels)
+- Custom sensor readings (extensible JSONB)
+
+**Frequency**: Varies by sensor type and sampling rate
+
+**Processing**: Direct validation and storage, real-time dashboard updates
+
+## Data Encoding Pipeline
+
+### Device Side (Firmware)
+
+```
+Sensor Reading → Protobuf Structure → Binary Encoding → CoAP Message → UDP Transmission
+```
+
+1. Collect sensor data or device status
+2. Populate protobuf message structure in memory
+3. Encode to compact binary format
+4. Wrap in CoAP POST request
+5. Transmit via UDP over NB-IoT
+
+### Server Side (Fly.io)
+
+```
+UDP Reception → CoAP Parsing → Protobuf Decoding → JSON Transform → HMAC Signing → HTTPS Forward
+```
+
+1. Receive UDP packet on port 5683
+2. Parse CoAP headers and payload
+3. Decode protobuf binary to structured data
+4. Convert to JSON format for Supabase
+5. Calculate HMAC signature
+6. Forward via HTTPS to Edge Function
+
+### Backend Side (Supabase)
+
+```
+HTTPS Reception → HMAC Verification → Data Routing → API Integration → Database Storage → WebSocket Push
+```
+
+1. Receive HTTPS POST from Fly.io
+2. Verify HMAC signature authenticity
+3. Route by data type (location vs sensor)
+4. Call HERE API if location data present
+5. Store in appropriate database table
+6. Push real-time updates to dashboard
+
+## Protocol Evolution
+
+### Version Compatibility
+
+Protocol Buffers ensures backward compatibility:
+
+**Adding Fields**:
+- New optional fields can be added freely
+- Old firmware ignores new fields
+- New server handles messages from old firmware
+
+**Removing Fields**:
+- Mark as deprecated, don't reuse field numbers
+- Server continues to accept old messages
+- Gradual migration as devices update
+
+**Changing Types**:
+- Avoid type changes (breaks compatibility)
+- Add new field with new type if needed
+- Deprecate old field
+
+### Schema Update Process
+
+1. Update `.proto` file in repository
+2. Regenerate code for all platforms:
+   - Firmware: `nanopb` for embedded C
+   - Server: `protoc` for Python
+   - Dashboard: `protoc` for TypeScript (if needed)
+3. Deploy server first (handles both old and new)
+4. Update firmware gradually via OTA
+5. Monitor for parsing errors in logs
+
+## Security Considerations
+
+### Protocol-Level Security
+
+**CoAP**:
+- No built-in encryption for messages
+- Relies on cellular network encryption (LTE/NB-IoT)
+- Optional DTLS support (not currently implemented)
+
+**Protobuf**:
+- Provides data validation, not encryption
+- Schema prevents malformed messages
+- Type checking reduces injection attacks
+
+### System-Level Security
+
+**Device Authentication**:
+- Device ID in protobuf payload
+- Whitelisted devices in database
+- Cellular network provides device isolation
+
+**Server-to-Server**:
+- HMAC-SHA256 signatures on all Fly.io → Supabase requests
+- TLS encryption for HTTPS traffic
+- Environment-based secret management
+
+**Data Integrity**:
+- Protobuf schema validation
+- HMAC prevents message tampering
+- Database constraints enforce data quality
+
+## Performance Characteristics
+
+### Message Size Comparison
+
+**Heartbeat Message**:
+- Protobuf: ~80-120 bytes
+- Equivalent JSON: ~300-400 bytes
+- **Savings**: ~70% reduction
+
+**Location Message** (10 WiFi networks):
+- Protobuf: ~200-250 bytes
+- Equivalent JSON: ~800-1000 bytes
+- **Savings**: ~75% reduction
+
+### Latency Benchmarks
+
+**Device to Server** (CoAP):
+- Typical: 200-500ms (NB-IoT latency)
+- Maximum: 2000ms (poor network conditions)
+
+**Server to Database** (HTTPS):
+- Typical: 50-150ms (Fly.io → Supabase)
+- With HERE API: +200-400ms (location processing)
+
+**Database to Dashboard** (WebSocket):
+- Typical: 10-50ms (real-time subscription)
+- Updates appear within 1 second of device transmission
+
+### Bandwidth Usage
+
+**Per Message**:
+- CoAP overhead: ~20 bytes
+- Protobuf payload: 80-250 bytes
+- **Total**: 100-270 bytes per transmission
+
+**Monthly Estimate** (hourly heartbeat):
+- Messages per month: 720 (24 × 30)
+- Data usage: ~180 KB/month
+- Well within NB-IoT plan limits
+
+## Future Protocol Enhancements
+
+### Planned Features
+
+**Downlink Commands**:
+- Remote configuration updates
+- OTA firmware deployment
+- Device reboot/reset commands
+
+**DTLS Encryption**:
+- End-to-end encryption for CoAP
+- Certificate-based device authentication
+- Enhanced security for sensitive data
+
+**Message Compression**:
+- GZIP compression for large payloads
+- Further bandwidth reduction
+- Trade-off: increased processing time
+
+**Multicast Support**:
+- Broadcast messages to device groups
+- Efficient configuration updates
+- Firmware distribution optimization

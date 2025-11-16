@@ -1,0 +1,509 @@
+# Protocol Messages
+
+Complete Protocol Buffer message definitions for the MOC-IoT system. All messages use protobuf for compact binary serialization.
+
+## Message Structure Overview
+
+```
+Uplink (root message)
+├── uplink_count: uint32
+├── Heartbeat
+│   ├── Config
+│   ├── Activity
+│   ├── Reboot
+│   └── modem_temperature: uint32
+└── Location
+    └── WiFi[]
+```
+
+## Core Messages
+
+### Uplink Message
+
+The root message structure containing all device-to-server communication.
+
+```protobuf
+message Uplink {
+  Heartbeat heartbeat = 1;
+  Location location = 2;
+  uint32 uplink_count = 3;
+}
+```
+
+**Fields**:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `heartbeat` | Heartbeat | Device status, config, activity tracking |
+| `location` | Location | WiFi access points for positioning |
+| `uplink_count` | uint32 | Sequential message counter (starts at 0) |
+
+**Usage**:
+- `uplink_count`: Increments with each transmission, used for deduplication and ordering
+- At least one of `heartbeat` or `location` should be present
+- Can combine heartbeat + location in single message for efficiency
+
+---
+
+## Heartbeat Messages
+
+### Heartbeat
+
+Container for device status information.
+
+```protobuf
+message Heartbeat {
+  Config config = 1;
+  Activity activity = 2;
+  Reboot reboot = 3;
+  uint32 modem_temperature = 4;
+}
+```
+
+**Fields**:
+
+| Field | Type | Description | Required |
+|-------|------|-------------|----------|
+| `config` | Config | Device configuration and metadata | Yes |
+| `activity` | Activity | Power consumption tracking | No |
+| `reboot` | Reboot | System event information | No (only after reboot) |
+| `modem_temperature` | uint32 | Modem temperature in Celsius | No |
+
+---
+
+### Config
+
+Device identification and configuration settings.
+
+```protobuf
+message Config {
+  uint32 dev_id = 1;
+  uint32 heartbeat_interval = 2;
+  string iccid = 3;
+  string hw_version = 4;
+  string sw_version = 5;
+  LocationMode location_mode = 6;
+  uint32 battery_level = 7;
+  SensorType sensor_type = 8;
+}
+
+enum LocationMode {
+  NONE = 0;
+  GPS = 1;
+  WIFI = 2;
+  GNSS_WIFI = 3;
+  WIFI_GNSS = 4;
+}
+
+enum SensorType {
+  GENERIC = 0;
+  SOIL = 1;
+  ENVIRONMENTAL = 2;
+  TRACKER = 3;
+}
+```
+
+**Fields**:
+
+| Field | Type | Description | Example |
+|-------|------|-------------|---------|
+| `dev_id` | uint32 | Unique device identifier | `12345` |
+| `heartbeat_interval` | uint32 | Seconds between heartbeats | `3600` (1 hour) |
+| `iccid` | string | SIM card identifier (max 20 chars) | `"89461177711234567890"` |
+| `hw_version` | string | Hardware version (max 16 chars) | `"v1.2.3"` |
+| `sw_version` | string | Software/firmware version (max 16 chars) | `"v2.0.1"` |
+| `location_mode` | LocationMode | Positioning method preference | `GNSS_WIFI` |
+| `battery_level` | uint32 | Battery percentage (0-100) | `87` |
+| `sensor_type` | SensorType | Type of sensor device | `SOIL` |
+
+**LocationMode Values**:
+- `NONE` (0): Location disabled
+- `GPS` (1): GNSS only
+- `WIFI` (2): WiFi triangulation only
+- `GNSS_WIFI` (3): Try GNSS first, fallback to WiFi
+- `WIFI_GNSS` (4): Try WiFi first, fallback to GNSS
+
+**SensorType Values**:
+- `GENERIC` (0): General-purpose device
+- `SOIL` (1): Soil monitoring sensors
+- `ENVIRONMENTAL` (2): Environmental sensors
+- `TRACKER` (3): Location tracker only
+
+---
+
+### Activity
+
+Power consumption tracking for battery life estimation.
+
+```protobuf
+message Activity {
+  uint32 sleep = 1;
+  uint32 modem = 2;
+  uint32 gnss = 3;
+  uint32 wifi = 4;
+  uint32 other = 5;
+}
+```
+
+**Fields** (all in seconds):
+
+| Field | Type | Description | Example |
+|-------|------|-------------|---------|
+| `sleep` | uint32 | Sleep mode duration | `3540` (59 min) |
+| `modem` | uint32 | Modem active time | `45` (45 sec) |
+| `gnss` | uint32 | GNSS active time | `10` (10 sec) |
+| `wifi` | uint32 | WiFi scanning time | `5` (5 sec) |
+| `other` | uint32 | Other operations | `0` |
+
+**Usage**:
+- Sum should approximately equal heartbeat interval
+- Used for battery life calculation in dashboard
+- Helps identify power consumption patterns
+
+---
+
+### Reboot
+
+System event information sent after device restart.
+
+```protobuf
+message Reboot {
+  RebootReason reason = 1;
+  string file = 2;
+  uint32 line = 3;
+  uint32 uptime_before = 4;
+}
+
+enum RebootReason {
+  UNKNOWN = 0;
+  SOFTWARE = 1;
+  ASSERT = 2;
+  RTC_WAKEUP = 3;
+  POWER_ON = 4;
+  WATCHDOG = 5;
+}
+```
+
+**Fields**:
+
+| Field | Type | Description | Example |
+|-------|------|-------------|---------|
+| `reason` | RebootReason | Cause of reboot | `WATCHDOG` |
+| `file` | string | Source file if crash (max 64 chars) | `"main.c"` |
+| `line` | uint32 | Line number if crash | `142` |
+| `uptime_before` | uint32 | Uptime in seconds before reboot | `86400` (1 day) |
+
+**RebootReason Values**:
+- `UNKNOWN` (0): Reason not determined
+- `SOFTWARE` (1): Intentional software reboot
+- `ASSERT` (2): Assertion failure (crash)
+- `RTC_WAKEUP` (3): RTC timer wakeup from deep sleep
+- `POWER_ON` (4): Power-on reset
+- `WATCHDOG` (5): Watchdog timer reset (firmware hang)
+
+---
+
+## Location Messages
+
+### Location
+
+WiFi access point data for positioning.
+
+```protobuf
+message Location {
+  repeated WiFi wifi = 1;
+}
+
+message WiFi {
+  string mac = 1;
+  int32 rssi = 2;
+  uint32 channel = 3;
+}
+```
+
+**WiFi Fields**:
+
+| Field | Type | Description | Example |
+|-------|------|-------------|---------|
+| `mac` | string | MAC address (max 17 chars) | `"AA:BB:CC:DD:EE:FF"` |
+| `rssi` | int32 | Signal strength in dBm | `-45` (strong) to `-90` (weak) |
+| `channel` | uint32 | WiFi channel (1-14) | `6` |
+
+**Best Practices**:
+- Send 3-10 WiFi networks for accurate positioning
+- Include strongest signals (highest RSSI)
+- MAC address format: uppercase with colons
+- RSSI typically ranges from -30 dBm (very strong) to -100 dBm (very weak)
+
+---
+
+## Message Construction Examples
+
+### Example 1: Basic Heartbeat
+
+Minimal heartbeat message with device configuration:
+
+```c
+uplink_Uplink uplink = uplink_Uplink_init_zero;
+
+// Message counter
+uplink.uplink_count = 1;
+uplink.has_uplink_count = true;
+
+// Device configuration
+uplink.has_heartbeat = true;
+uplink.heartbeat.has_config = true;
+
+uplink.heartbeat.config.dev_id = 12345;
+uplink.heartbeat.config.has_dev_id = true;
+
+uplink.heartbeat.config.heartbeat_interval = 3600; // 1 hour
+uplink.heartbeat.config.has_heartbeat_interval = true;
+
+strcpy(uplink.heartbeat.config.iccid, "89461177711234567890");
+strcpy(uplink.heartbeat.config.hw_version, "v1.2.3");
+strcpy(uplink.heartbeat.config.sw_version, "v2.0.1");
+
+uplink.heartbeat.config.location_mode = uplink_LocationMode_GNSS_WIFI;
+uplink.heartbeat.config.has_location_mode = true;
+
+uplink.heartbeat.config.battery_level = 87;
+uplink.heartbeat.config.has_battery_level = true;
+```
+
+### Example 2: Heartbeat with Activity
+
+Heartbeat including power consumption tracking:
+
+```c
+uplink_Uplink uplink = uplink_Uplink_init_zero;
+uplink.uplink_count = 42;
+uplink.has_uplink_count = true;
+
+// Config (as above)
+uplink.has_heartbeat = true;
+uplink.heartbeat.has_config = true;
+// ... config fields ...
+
+// Activity tracking
+uplink.heartbeat.has_activity = true;
+
+uplink.heartbeat.activity.sleep = 3540; // 59 minutes
+uplink.heartbeat.activity.has_sleep = true;
+
+uplink.heartbeat.activity.modem = 45; // 45 seconds
+uplink.heartbeat.activity.has_modem = true;
+
+uplink.heartbeat.activity.gnss = 10; // 10 seconds
+uplink.heartbeat.activity.has_gnss = true;
+
+uplink.heartbeat.activity.wifi = 5; // 5 seconds
+uplink.heartbeat.activity.has_wifi = true;
+```
+
+### Example 3: Location Only
+
+WiFi positioning data:
+
+```c
+uplink_Uplink uplink = uplink_Uplink_init_zero;
+uplink.uplink_count = 100;
+uplink.has_uplink_count = true;
+
+// Location data
+uplink.has_location = true;
+uplink.location.wifi_count = 3;
+
+// First WiFi network
+strcpy(uplink.location.wifi[0].mac, "AA:BB:CC:DD:EE:FF");
+uplink.location.wifi[0].rssi = -45;
+uplink.location.wifi[0].has_rssi = true;
+uplink.location.wifi[0].channel = 6;
+uplink.location.wifi[0].has_channel = true;
+
+// Second WiFi network
+strcpy(uplink.location.wifi[1].mac, "11:22:33:44:55:66");
+uplink.location.wifi[1].rssi = -67;
+uplink.location.wifi[1].has_rssi = true;
+
+// Third WiFi network
+strcpy(uplink.location.wifi[2].mac, "AA:11:BB:22:CC:33");
+uplink.location.wifi[2].rssi = -72;
+uplink.location.wifi[2].has_rssi = true;
+```
+
+### Example 4: Combined Message
+
+Heartbeat + location in one transmission (most efficient):
+
+```c
+uplink_Uplink uplink = uplink_Uplink_init_zero;
+uplink.uplink_count = 250;
+uplink.has_uplink_count = true;
+
+// Heartbeat section
+uplink.has_heartbeat = true;
+uplink.heartbeat.has_config = true;
+// ... config fields ...
+
+uplink.heartbeat.has_activity = true;
+// ... activity fields ...
+
+// Location section
+uplink.has_location = true;
+uplink.location.wifi_count = 5;
+// ... wifi fields ...
+
+// Combined size: ~150-200 bytes (vs 300-400 bytes JSON)
+```
+
+### Example 5: Reboot Event
+
+Heartbeat after watchdog reset:
+
+```c
+uplink_Uplink uplink = uplink_Uplink_init_zero;
+uplink.uplink_count = 1; // Reset to 1 after reboot
+uplink.has_uplink_count = true;
+
+uplink.has_heartbeat = true;
+uplink.heartbeat.has_config = true;
+// ... config fields ...
+
+// Reboot information
+uplink.heartbeat.has_reboot = true;
+
+uplink.heartbeat.reboot.reason = uplink_RebootReason_WATCHDOG;
+uplink.heartbeat.reboot.has_reason = true;
+
+strcpy(uplink.heartbeat.reboot.file, "sensor_task.c");
+
+uplink.heartbeat.reboot.line = 142;
+uplink.heartbeat.reboot.has_line = true;
+
+uplink.heartbeat.reboot.uptime_before = 86400; // Was running for 1 day
+uplink.heartbeat.reboot.has_uptime_before = true;
+```
+
+---
+
+## Python Testing Examples
+
+For testing and debugging, use Python with the protobuf library:
+
+### Create and Encode Message
+
+```python
+import uplink_pb2
+
+# Create uplink message
+uplink = uplink_pb2.Uplink()
+uplink.uplink_count = 42
+
+# Set device configuration
+config = uplink.heartbeat.config
+config.dev_id = 12345
+config.heartbeat_interval = 3600
+config.iccid = "89461177711234567890"
+config.hw_version = "v1.2.3"
+config.sw_version = "v2.0.1"
+config.location_mode = uplink_pb2.LocationMode.GNSS_WIFI
+config.battery_level = 87
+
+# Set activity
+activity = uplink.heartbeat.activity
+activity.sleep = 3540
+activity.modem = 45
+activity.gnss = 10
+activity.wifi = 5
+
+# Add WiFi networks
+wifi1 = uplink.location.wifi.add()
+wifi1.mac = "AA:BB:CC:DD:EE:FF"
+wifi1.rssi = -45
+wifi1.channel = 6
+
+wifi2 = uplink.location.wifi.add()
+wifi2.mac = "11:22:33:44:55:66"
+wifi2.rssi = -67
+
+# Serialize to binary
+binary_data = uplink.SerializeToString()
+print(f"Message size: {len(binary_data)} bytes")
+print(f"Hex: {binary_data.hex()}")
+```
+
+### Decode and Inspect Message
+
+```python
+import uplink_pb2
+
+# Parse binary data
+uplink = uplink_pb2.Uplink()
+uplink.ParseFromString(binary_data)
+
+# Access fields
+print(f"Device ID: {uplink.heartbeat.config.dev_id}")
+print(f"Uplink count: {uplink.uplink_count}")
+print(f"Battery: {uplink.heartbeat.config.battery_level}%")
+print(f"WiFi networks: {len(uplink.location.wifi)}")
+
+# Check optional fields
+if uplink.heartbeat.HasField('reboot'):
+    print(f"Reboot reason: {uplink.heartbeat.reboot.reason}")
+```
+
+---
+
+## Field Presence Checking
+
+Protocol Buffers uses "has" checks for optional fields:
+
+### C/C++ (nanopb)
+
+```c
+// Check if field is present
+if (uplink.heartbeat.has_reboot) {
+    // Process reboot information
+    handle_reboot(uplink.heartbeat.reboot);
+}
+
+// Check activity fields
+if (uplink.heartbeat.activity.has_gnss && uplink.heartbeat.activity.gnss > 0) {
+    // GNSS was used
+}
+```
+
+### Python
+
+```python
+# Check for optional sections
+if uplink.heartbeat.HasField('reboot'):
+    print(f"Device rebooted: {uplink.heartbeat.reboot.reason}")
+
+if uplink.heartbeat.HasField('activity'):
+    total_awake = (uplink.heartbeat.activity.modem +
+                   uplink.heartbeat.activity.gnss +
+                   uplink.heartbeat.activity.wifi)
+    print(f"Total awake time: {total_awake}s")
+```
+
+---
+
+## Message Size Reference
+
+Typical message sizes after protobuf encoding:
+
+| Message Type | Size (bytes) | Equivalent JSON (bytes) | Savings |
+|--------------|--------------|-------------------------|---------|
+| Basic heartbeat | 80-100 | 250-300 | 70% |
+| Heartbeat + activity | 100-120 | 350-400 | 72% |
+| Location (5 WiFi) | 120-150 | 400-500 | 70% |
+| Combined (heartbeat + location) | 180-220 | 600-800 | 75% |
+| Heartbeat + reboot | 120-140 | 400-450 | 72% |
+
+**Benefits**:
+- Reduced cellular data usage
+- Faster transmission times
+- Lower power consumption
+- Smaller firmware storage requirements

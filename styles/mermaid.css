@@ -3,28 +3,60 @@
 /* Container for enhanced diagrams with zoom capability */
 .mermaid-enhanced {
   position: relative;
-  border: 1px solid #e2e8f0;
+  border: 1px solid #333;
   border-radius: 8px;
   padding: 20px;
   margin: 24px 0;
-  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  background: #000000;
+  box-shadow: 0 4px 6px -1px rgba(255, 255, 255, 0.1);
   overflow: hidden;
+  min-height: 200px;
 }
 
-.mermaid-enhanced::before {
-  content: "🔍 Click diagram to zoom | Right-click to open in new tab";
+/* Inline zoom controls */
+.mermaid-inline-controls {
   position: absolute;
-  top: 8px;
+  top: 12px;
   right: 12px;
-  background: rgba(59, 130, 246, 0.1);
-  color: #1e40af;
-  padding: 4px 8px;
-  font-size: 11px;
-  border-radius: 4px;
-  font-weight: 500;
-  z-index: 10;
-  pointer-events: none;
+  display: flex;
+  gap: 6px;
+  z-index: 20;
+}
+
+.mermaid-inline-btn {
+  background: rgba(31, 41, 55, 0.9);
+  color: white;
+  border: 1px solid #4b5563;
+  border-radius: 6px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 18px;
+  font-weight: bold;
+  transition: all 0.2s;
+  backdrop-filter: blur(4px);
+}
+
+.mermaid-inline-btn:hover {
+  background: rgba(55, 65, 81, 0.95);
+  border-color: #60a5fa;
+  transform: scale(1.05);
+}
+
+.mermaid-inline-btn:active {
+  transform: scale(0.95);
+}
+
+.mermaid-inline-btn[data-action="fullscreen"] {
+  background: rgba(59, 130, 246, 0.9);
+  border-color: #3b82f6;
+}
+
+.mermaid-inline-btn[data-action="fullscreen"]:hover {
+  background: rgba(37, 99, 235, 0.95);
 }
 
 /* Make Mermaid diagrams interactive and scalable */
@@ -112,7 +144,7 @@
   top: 0;
   width: 100%;
   height: 100%;
-  background-color: rgba(0, 0, 0, 0.9);
+  background-color: rgba(0, 0, 0, 0.95);
   backdrop-filter: blur(4px);
 }
 
@@ -124,14 +156,16 @@
 }
 
 .mermaid-zoom-content {
-  background: white;
+  background: #000000;
   border-radius: 12px;
   padding: 30px;
   max-width: 95vw;
   max-height: 95vh;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
   position: relative;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 25px 50px -12px rgba(255, 255, 255, 0.1);
+  border: 1px solid #333;
 }
 
 .mermaid-zoom-close {
@@ -155,11 +189,69 @@
 
 .mermaid-zoom-title {
   margin-top: 0;
-  margin-bottom: 20px;
-  color: #1f2937;
+  margin-bottom: 15px;
+  color: #ffffff;
   font-size: 24px;
   font-weight: 700;
   padding-right: 100px; /* Space for close button */
+}
+
+/* Zoom controls */
+.mermaid-zoom-controls {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 15px;
+  justify-content: center;
+}
+
+.mermaid-zoom-btn {
+  background: #1f2937;
+  color: white;
+  border: 1px solid #374151;
+  border-radius: 6px;
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.mermaid-zoom-btn:hover {
+  background: #374151;
+  border-color: #4b5563;
+}
+
+.mermaid-zoom-btn:active {
+  transform: scale(0.95);
+}
+
+/* Diagram container with scroll */
+.mermaid-zoom-diagram-container {
+  flex: 1;
+  overflow: auto;
+  background: #0a0a0a;
+  border-radius: 8px;
+  border: 1px solid #222;
+  position: relative;
+  min-height: 300px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mermaid-zoom-diagram {
+  cursor: grab;
+  transform-origin: center center;
+  transition: transform 0.1s ease-out;
+  user-select: none;
+  padding: 20px;
+  display: inline-block;
+  min-width: 100%;
+  min-height: 100%;
+}
+
+.mermaid-zoom-diagram:active {
+  cursor: grabbing;
 }
 
 /* Responsive design */

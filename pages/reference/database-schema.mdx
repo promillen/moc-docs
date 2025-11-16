@@ -2,6 +2,8 @@
 
 This document provides a comprehensive reference for the MOC-IoT PostgreSQL database schema, including table structures, relationships, and Row Level Security (RLS) policies.
 
+**Last updated:** November 16, 2024
+
 ## Database Overview
 
 The MOC-IoT system uses Supabase PostgreSQL with the following key characteristics:
@@ -12,6 +14,114 @@ The MOC-IoT system uses Supabase PostgreSQL with the following key characteristi
 - **Real-time**: WebSocket subscriptions for live updates
 - **Extensions**: PostGIS for geospatial data (if needed)
 
+## Visual Schema
+
+```mermaid
+erDiagram
+    device_config ||--o{ activity : "devid"
+    device_config ||--o{ reboot : "devid"
+    device_config ||--o{ sensor_data : "devid"
+    device_config ||--o{ locations : "devid"
+    device_config ||--o{ device_access : "devid"
+
+    auth_users ||--o| profiles : "id"
+    auth_users ||--o| user_roles : "user_id"
+    auth_users ||--o{ device_access : "user_id"
+
+    device_config {
+        text devid PK
+        text name
+        text iccid
+        int heartbeat_interval
+        text sw_version
+        text hw_version
+        int application_mode
+        timestamp device_data_updated_at
+        timestamp last_seen
+        timestamp created_at
+        int last_uplink_count
+        int battery_level
+        int internal_temperature
+        int sensor_type
+    }
+
+    activity {
+        uuid id PK
+        text devid FK
+        int uplink_count
+        int sleep
+        int modem
+        int gnss
+        int wifi
+        int other
+        timestamp created_at
+    }
+
+    reboot {
+        uuid id PK
+        text devid FK
+        int uplink_count
+        text reason
+        int line
+        text file
+        timestamp created_at
+    }
+
+    sensor_data {
+        uuid id PK
+        text devid FK
+        int uplink_count
+        text data_type
+        jsonb data
+        timestamp created_at
+    }
+
+    locations {
+        uuid id PK
+        text devid FK
+        double latitude
+        double longitude
+        double accuracy
+        text location_type
+        timestamp created_at
+        int uplink_count
+        jsonb test_column
+    }
+
+    profiles {
+        uuid id PK
+        text email
+        text full_name
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    user_roles {
+        uuid id PK
+        uuid user_id FK
+        text role
+        timestamp created_at
+    }
+
+    device_access {
+        uuid id PK
+        uuid user_id FK
+        text devid FK
+        timestamp created_at
+    }
+
+    auth_users {
+        uuid id PK
+        text email
+    }
+```
+
+**Key Relationships:**
+- **One device** → **many** activity/reboot/sensor_data/locations records
+- **One user** → **one** profile, **one** role, **many** device access permissions
+- All tables except `device_config` use UUID primary keys
+- All foreign keys enforce referential integrity
+
 ## Core Tables
 
 ### 1. device_config
@@ -20,17 +130,20 @@ Master table containing device configuration and metadata.
 
 ```sql
 CREATE TABLE device_config (
-  devid TEXT PRIMARY KEY,              -- Device identifier (from protobuf dev_id)
-  name TEXT,                           -- Human-readable device name
-  iccid TEXT,                          -- SIM card ICCID
-  heartbeat_interval INTEGER,          -- Heartbeat frequency in seconds
-  sw_version TEXT,                     -- Software version string
-  hw_version TEXT,                     -- Hardware version string
-  application_mode TEXT,               -- Device application mode
+  devid TEXT PRIMARY KEY,                      -- Device identifier (from protobuf dev_id)
+  name TEXT,                                   -- Human-readable device name
+  iccid TEXT,                                  -- SIM card ICCID
+  heartbeat_interval INTEGER,                  -- Heartbeat frequency in seconds
+  sw_version TEXT,                             -- Software version string
+  hw_version TEXT,                             -- Hardware version string
+  application_mode INTEGER CHECK (application_mode >= 0 AND application_mode <= 3),
   device_data_updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  last_seen TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  last_seen TIMESTAMP WITH TIME ZONE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  battery_level INTEGER DEFAULT 0     -- Battery percentage (0-100)
+  last_uplink_count INTEGER,                   -- Last received uplink counter
+  battery_level INTEGER,                       -- Battery level as percentage (0-100)
+  internal_temperature INTEGER,                -- Internal modem temperature in Celsius
+  sensor_type INTEGER DEFAULT 0                -- 0 = tracker, 1 = soil sensor
 );
 
 -- Indexes for performance
@@ -40,7 +153,7 @@ CREATE INDEX idx_device_config_created_at ON device_config(created_at DESC);
 
 **Key Relationships:**
 - `devid` is referenced by all other tables
-- Updated automatically when heartbeat messages are received
+- Updated automatically when heartbeat messages are received via triggers
 
 ### 2. sensor_data
 
@@ -48,11 +161,11 @@ Flexible table for storing all sensor readings and device data.
 
 ```sql
 CREATE TABLE sensor_data (
-  id BIGSERIAL PRIMARY KEY,
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   devid TEXT NOT NULL REFERENCES device_config(devid),
+  uplink_count INTEGER,                -- Message counter from device
   data_type TEXT NOT NULL,             -- Type of data: 'location', 'temperature', 'wifi_scan', etc.
   data JSONB NOT NULL,                 -- Flexible JSON data storage
-  uplink_count INTEGER,                -- Message counter from device
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -100,20 +213,49 @@ CREATE INDEX idx_sensor_data_data ON sensor_data USING GIN (data);
 }
 ```
 
-### 3. activity
+### 3. locations
+
+Dedicated table for device location data with coordinates and accuracy metrics.
+
+```sql
+CREATE TABLE locations (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  devid TEXT NOT NULL REFERENCES device_config(devid),
+  latitude DOUBLE PRECISION NOT NULL,
+  longitude DOUBLE PRECISION NOT NULL,
+  accuracy DOUBLE PRECISION,           -- Location accuracy in meters
+  location_type TEXT NOT NULL,         -- Type: 'wifi', 'gnss', 'cell', 'here_api'
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
+  uplink_count INTEGER,                -- Message counter
+  test_column JSONB                    -- Temporary field for testing
+);
+
+-- Indexes for spatial and time-based queries
+CREATE INDEX idx_locations_devid_created ON locations(devid, created_at DESC);
+CREATE INDEX idx_locations_created_at ON locations(created_at DESC);
+CREATE INDEX idx_locations_coords ON locations(latitude, longitude);
+```
+
+**Location Types:**
+- `wifi`: WiFi-based positioning via HERE API
+- `gnss`: GPS/GNSS positioning
+- `cell`: Cell tower-based positioning
+- `here_api`: Combined positioning using HERE Positioning API
+
+### 4. activity
 
 Power consumption and device activity tracking.
 
 ```sql
 CREATE TABLE activity (
-  id BIGSERIAL PRIMARY KEY,
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   devid TEXT NOT NULL REFERENCES device_config(devid),
-  sleep_duration INTEGER DEFAULT 0,    -- Sleep time in seconds
-  modem_duration INTEGER DEFAULT 0,    -- Modem active time in seconds
-  gnss_duration INTEGER DEFAULT 0,     -- GNSS active time in seconds
-  wifi_duration INTEGER DEFAULT 0,     -- WiFi scanning time in seconds
-  other_duration INTEGER DEFAULT 0,    -- Other activities in seconds
-  uplink_count INTEGER,               -- Message counter
+  uplink_count INTEGER,                -- Message counter
+  sleep INTEGER,                       -- Sleep time in seconds
+  modem INTEGER,                       -- Modem active time in seconds
+  gnss INTEGER,                        -- GNSS active time in seconds
+  wifi INTEGER,                        -- WiFi scanning time in seconds
+  other INTEGER,                       -- Other activities in seconds
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -122,18 +264,18 @@ CREATE INDEX idx_activity_devid_created ON activity(devid, created_at DESC);
 CREATE INDEX idx_activity_created_at ON activity(created_at DESC);
 ```
 
-### 4. reboot
+### 5. reboot
 
 Device reboot and crash event tracking.
 
 ```sql
 CREATE TABLE reboot (
-  id BIGSERIAL PRIMARY KEY,
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   devid TEXT NOT NULL REFERENCES device_config(devid),
+  uplink_count INTEGER,                -- Message counter
   reason TEXT NOT NULL,                -- Reboot reason: 'SOFTWARE', 'ASSERT', 'WATCHDOG', etc.
-  file TEXT,                          -- Source file (if crash)
-  line INTEGER,                       -- Line number (if crash)
-  uplink_count INTEGER,              -- Message counter
+  line INTEGER,                        -- Line number (if crash)
+  file TEXT,                           -- Source file (if crash)
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -142,19 +284,43 @@ CREATE INDEX idx_reboot_devid_created ON reboot(devid, created_at DESC);
 CREATE INDEX idx_reboot_reason ON reboot(reason);
 ```
 
-### 5. user_roles
+### 6. profiles
 
-User access control and permissions.
+User profile information linked to Supabase Auth.
 
 ```sql
+CREATE TABLE profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id),
+  email TEXT,
+  full_name TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+);
+
+-- Index for quick lookups
+CREATE INDEX idx_profiles_email ON profiles(email);
+```
+
+**Usage:**
+- Automatically populated when users sign up via Supabase Auth
+- Linked 1:1 with `auth.users` table
+- Stores additional user metadata beyond authentication
+
+### 7. user_roles
+
+User access control and permissions using custom enum type.
+
+```sql
+-- Custom enum for role types
+CREATE TYPE app_role AS ENUM ('admin', 'moderator', 'user', 'developer');
+
 CREATE TABLE user_roles (
-  id BIGSERIAL PRIMARY KEY,
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES auth.users(id),
-  role TEXT NOT NULL,                  -- 'developer', 'admin', 'moderator', 'user'
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  
-  UNIQUE(user_id)                     -- One role per user
+  role app_role NOT NULL,              -- Enum: 'admin', 'moderator', 'user', 'developer'
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
+
+  UNIQUE(user_id)                      -- One role per user
 );
 
 -- Index for role-based queries
@@ -167,6 +333,29 @@ CREATE INDEX idx_user_roles_role ON user_roles(role);
 - `moderator`: Read/write access to device data, limited user management
 - `developer`: Full access to development tools and documentation
 - `user`: Read-only access to device data
+
+### 8. device_access
+
+User-to-device access permissions for granular access control.
+
+```sql
+CREATE TABLE device_access (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id),
+  devid TEXT NOT NULL REFERENCES device_config(devid),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+);
+
+-- Indexes for efficient access checks
+CREATE INDEX idx_device_access_user ON device_access(user_id);
+CREATE INDEX idx_device_access_device ON device_access(devid);
+CREATE UNIQUE INDEX idx_device_access_unique ON device_access(user_id, devid);
+```
+
+**Purpose:**
+- Allows fine-grained control over which users can access specific devices
+- Used in combination with Row Level Security policies
+- Admins and moderators typically have access to all devices
 
 ## Row Level Security (RLS) Policies
 

@@ -2,6 +2,7 @@ import type { AppProps } from 'next/app'
 import { useRouter } from 'next/router'
 import { useEffect, useState } from 'react'
 import Head from 'next/head'
+import Script from 'next/script'
 import { supabase } from '../lib/supabase'
 import '../styles/mermaid.css'
 
@@ -118,5 +119,10 @@ export default function App({ Component, pageProps }: AppProps) {
     )
   }
 
-  return <Component {...pageProps} user={user} />
+  return (
+    <>
+      <Script src="/mermaid-zoom.js" strategy="afterInteractive" />
+      <Component {...pageProps} user={user} />
+    </>
+  )
 }

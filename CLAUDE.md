@@ -4,29 +4,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Overview
 
-This is a documentation site for the MOC-IoT device management system, built with MkDocs Material. The documentation covers a complete IoT ecosystem including:
+This is a technical documentation site for the MOC-IoT device management system, built with Next.js and Nextra. The documentation covers a complete IoT ecosystem including:
 
 - **IoT Devices** → **Fly.io Server** (CoAP/UDP) → **Supabase Edge Functions** → **Database** → **Frontend Dashboard**
 - Real-time data processing with location services (HERE API integration)
 - Authentication-gated documentation site deployed to Vercel
+- Role-based access requiring `developer` role from the `user_roles` table
 
 ## Common Development Commands
 
 ### Local Development
 ```bash
 # Install dependencies
-pip install -r requirements.txt
+npm install
 
-# Start development server (no auth checks)
-mkdocs serve
+# Start development server
+npm run dev
 
-# Access locally at http://localhost:8000
+# Access locally at http://localhost:3000
 ```
 
 ### Building and Deployment
 ```bash
 # Build documentation site
-mkdocs build
+npm run build
 
 # Manual Vercel deployment (if needed)
 vercel --prod
@@ -44,9 +45,13 @@ The system follows this pattern:
 
 ### Key Database Tables
 - `device_config` - Device configuration and metadata
-- `sensor_data` - All sensor readings and telemetry  
-- `activity` - Device activity logs
+- `sensor_data` - All sensor readings and telemetry (flexible JSONB storage)
+- `locations` - Dedicated location data with coordinates and accuracy
+- `activity` - Device activity logs and power consumption
 - `reboot` - Device reboot events
+- `profiles` - User profile information
+- `user_roles` - Role-based access control (admin/moderator/developer/user)
+- `device_access` - User-device access permissions
 
 ### Development Change Process
 When modifying data structures:
@@ -56,15 +61,6 @@ When modifying data structures:
 4. Modify Supabase Edge Functions
 5. Update database schema if needed
 6. Update frontend components
-
-## Documentation Structure
-
-The docs follow a structured organization:
-- **Architecture** - System overviews and data flow
-- **API Documentation** - Edge functions, CoAP interfaces, schemas
-- **Operations** - Deployment, monitoring, troubleshooting
-- **Development** - Local setup, testing, contributing guides
-- **Reference** - Environment variables, database schema, changelog
 
 ## Authentication System
 
@@ -80,7 +76,7 @@ The documentation site uses role-based authentication integrated with the main M
 - `/pages/login.tsx` - Authentication form with role verification
 - `/pages/_app.tsx` - Global auth wrapper checking sessions on all pages
 - `/middleware.ts` - Minimal pass-through middleware (auth handled client-side)
-- `/pages/authentication.mdx` - Complete documentation of auth flow
+- `/lib/supabase.ts` - Supabase client configuration with connection details
 
 ### User Flow
 1. User accesses any documentation page
@@ -95,7 +91,73 @@ Users must exist in the `user_roles` table with `role = 'developer'` to access d
 
 ## Deployment Configuration
 
-- **Vercel** handles automatic deployment from `main` branch
-- Build process: `pip install -r requirements.txt && mkdocs build`
-- Output directory: `site/`
-- Security headers configured for XSS protection and content security
+- **Platform**: Vercel with automatic deployment from main branch
+- **Framework**: Next.js 14 with Nextra 3.0 theme for documentation
+- **Build Command**: `npm run build`
+- **Output Directory**: `.next/`
+- **Authentication**: Client-side Supabase Auth with role verification
+- **Security**: HTTPS-only, XSS protection headers, content security policies
+- **URL Redirects**: Configured in `vercel.json` for `/docs/:path*` → `/:path*`
+
+## Key Technologies
+
+### Documentation Stack
+- **Next.js 14**: React framework with SSR/SSG capabilities
+- **Nextra 3.0**: Documentation theme with MDX support
+- **TypeScript**: Type-safe component development
+- **Tailwind CSS 4.1**: Utility-first CSS framework
+- **Supabase Client 2.56+**: Database and authentication
+- **Lucide React**: Icon library for UI elements
+
+### Supabase Integration
+- **Project**: `cdwtsrzshpotkfbyyyjk.supabase.co`
+- **Client Library**: `@supabase/supabase-js`
+- **Configuration**: Stored in `/lib/supabase.ts`
+- **Auth Flow**: Password-based with role verification
+- **Real-time**: Not actively used in docs (read-only access)
+
+## Important Notes
+
+### File Structure
+```
+pages/
+├── _app.tsx              # Global auth wrapper
+├── _meta.tsx             # Main navigation structure
+├── login.tsx             # Authentication page
+├── index.mdx             # Homepage
+├── architecture/         # Architecture documentation
+│   ├── _meta.tsx
+│   ├── system-overview.mdx
+│   ├── coap-bridge.mdx
+│   ├── dashboard.mdx
+│   └── protocol-specs.mdx
+├── development/          # Development guides
+│   ├── _meta.tsx
+│   ├── firmware-guide.mdx
+│   ├── local-testing.mdx
+│   ├── database-troubleshooting.mdx
+│   └── deployment.mdx
+├── api-docs/             # API documentation
+│   ├── _meta.tsx
+│   └── edge-function.mdx
+└── reference/            # Reference materials
+    ├── _meta.tsx
+    ├── database-schema.mdx
+    └── environment-vars.mdx
+
+lib/
+└── supabase.ts           # Supabase client configuration
+
+public/
+└── mermaid-zoom.js       # Custom Mermaid diagram zoom functionality
+
+styles/
+└── mermaid.css           # Mermaid diagram styling
+```
+
+### Authentication Behavior
+- All routes except `/login` require authentication
+- Auth check happens in `_app.tsx` useEffect on every route
+- Users without `developer` role are automatically signed out
+- Login page preserves redirect URL for seamless return after auth
+- Loading spinner shown during authentication verification

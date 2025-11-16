@@ -1,7 +1,7 @@
 export default {
   index: "Home",
   architecture: "Architecture",
-  development: "Development Guide",
-  "api-docs": "API Documentation",
+  development: "Development",
+  "api-reference": "API Reference",
   reference: "Reference"
 }

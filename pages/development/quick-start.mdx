@@ -1,0 +1,235 @@
+# Quick Start Guide
+
+Get the MOC-IoT system running locally. This guide covers setting up the Dashboard and CoAP Bridge.
+
+## Prerequisites
+
+Before starting, ensure you have the following installed:
+
+### Required Software
+
+- **Node.js 18+** and npm
+- **Python 3.11+** and pip
+- **Git** for cloning repositories
+- **Fly.io CLI** (for CoAP bridge deployment)
+- **Text editor** (VS Code recommended)
+
+### Required Accounts
+
+- **Supabase** account with project access (`cdwtsrzshpotkfbyyyjk`)
+- **Fly.io** account (for CoAP bridge deployment)
+- **HERE Developer** account (for location API access)
+
+### Environment Access
+
+You'll need:
+- Supabase URL and API keys
+- Fly.io project access to `flyio-nbiot`
+- HERE API key for location services
+
+## Dashboard Setup (5 minutes)
+
+The Dashboard is the primary interface for monitoring devices. Start here for the fastest setup.
+
+### 1. Clone Repository
+
+```bash
+git clone https://github.com/promillen/frontend.git
+cd frontend
+```
+
+### 2. Install Dependencies
+
+```bash
+npm install
+```
+
+This installs:
+- React 18, TypeScript, Vite
+- shadcn-ui components
+- TanStack Query, Leaflet, Recharts
+- Supabase client
+
+### 3. Configure Environment
+
+The Supabase configuration is already embedded in the codebase at `src/integrations/supabase/client.ts`. No `.env` file needed for local development.
+
+### 4. Start Development Server
+
+```bash
+npm run dev
+```
+
+Dashboard now running at: **http://localhost:8080**
+
+### 5. Login
+
+Use your Supabase credentials to authenticate. You must have a role in the `user_roles` table to access the dashboard.
+
+### 6. Verify
+
+You should see:
+- Device list (if any devices exist)
+- Interactive map
+- Real-time updates working
+
+**Next steps**: See [Dashboard Development](/development/dashboard) for detailed guide.
+
+---
+
+## CoAP Bridge Setup
+
+The CoAP bridge receives device messages and forwards them to Supabase.
+
+### 1. Clone Repository
+
+```bash
+git clone <coap-bridge-repository-url>
+cd CoAP-bridge
+```
+
+### 2. Install Python Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+Key dependencies:
+- `aiocoap`: CoAP protocol handling
+- `aiohttp`: HTTP client for Supabase
+- `protobuf`: Message parsing
+
+### 3. Set Environment Variables
+
+Create a `.env` file or export variables:
+
+```bash
+export SUPABASE_URL="https://cdwtsrzshpotkfbyyyjk.supabase.co"
+export SUPABASE_API_KEY="<your-service-role-key>"
+export FLY_INGEST_SECRET="<your-hmac-secret>"
+```
+
+**Important**: Use the **service role key**, not the anon key.
+
+### 4. Run Locally
+
+```bash
+python main.py
+```
+
+Server listening on: **UDP port 5683**
+
+### 5. Test Endpoint
+
+In a separate terminal, test with a CoAP client:
+
+```bash
+# Install CoAP client tool
+pip install aiocoap[all]
+
+# Send test message
+echo "test" | coap-client -m POST coap://localhost:5683/data
+```
+
+You should see logs showing message reception.
+
+### 6. Deploy to Fly.io
+
+```bash
+flyctl deploy
+```
+
+Monitor deployment:
+```bash
+flyctl status
+flyctl logs
+```
+
+**Next steps**: See [CoAP Bridge Development](/development/coap-bridge) for detailed guide.
+
+---
+
+## Verification Checklist
+
+After setup, verify each component:
+
+### Dashboard ✓
+- [ ] npm run dev starts without errors
+- [ ] Login page appears
+- [ ] Can authenticate with valid credentials
+- [ ] Dashboard loads with device list
+- [ ] Map component renders
+
+### CoAP Bridge ✓
+- [ ] python main.py starts without errors
+- [ ] Listens on UDP port 5683
+- [ ] Can receive CoAP messages
+- [ ] Logs show successful parsing
+- [ ] Supabase connection working
+
+---
+
+## Common Issues
+
+### Dashboard Won't Start
+
+**Error**: `Cannot find module`
+```bash
+# Solution: Clean install
+rm -rf node_modules package-lock.json
+npm install
+```
+
+**Error**: `Port 8080 already in use`
+```bash
+# Solution: Change port in vite.config.ts or kill existing process
+npx kill-port 8080
+```
+
+### CoAP Bridge Connection Failed
+
+**Error**: `Permission denied` on port 5683
+```bash
+# Solution: Run with elevated privileges or use port >1024
+sudo python main.py
+# OR change port in main.py
+```
+
+**Error**: `Supabase authentication failed`
+```bash
+# Solution: Verify you're using SERVICE_ROLE key, not ANON key
+echo $SUPABASE_API_KEY  # Should start with 'eyJ...'
+```
+
+### Protocol Buffer Issues
+
+
+---
+
+## Next Steps
+
+### Learn the Architecture
+- [System Overview](/architecture/system-overview) - Understand component relationships
+- [Data Flow](/architecture/data-flow) - See how messages are processed
+- [Protocol Overview](/architecture/protocol-overview) - CoAP and Protobuf details
+
+### Dive into Development
+- [CoAP Bridge Development](/development/coap-bridge) - Deploy and monitor the bridge
+- [Dashboard Development](/development/dashboard) - Build frontend features
+
+### Reference Materials
+- [Database Schema](/reference/database-schema) - Table structures
+- [Protocol Messages](/api-reference/protocol-messages) - Protobuf definitions
+- [Edge Function API](/api-reference/edge-function) - HTTP endpoint specs
+
+---
+
+## Getting Help
+
+**Documentation Issues**: Check the `/development` section for component-specific troubleshooting
+
+**Database Problems**: See [Database Troubleshooting](/development/database-troubleshooting)
+
+**Protocol Questions**: Reference [Protocol Messages](/api-reference/protocol-messages) for message formats
+
+**General Questions**: Review the [System Overview](/architecture/system-overview) for architectural context

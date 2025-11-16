@@ -1,0 +1,534 @@
+# CoAP Bridge Development
+
+The CoAP bridge is a Python 3.11 server running on Fly.io that receives device messages and forwards them to Supabase. This guide covers local development, deployment, monitoring, and troubleshooting.
+
+## Local Development Setup
+
+### Prerequisites
+
+- Python 3.11 or higher
+- pip package manager
+- Fly.io CLI (for deployment)
+- Supabase service role key
+
+### 1. Install Dependencies
+
+```bash
+cd CoAP-bridge
+pip install -r requirements.txt
+```
+
+**Key dependencies**:
+- `aiocoap`: Asynchronous CoAP protocol handling
+- `aiohttp`: HTTP client for Supabase communication
+- `protobuf`: Protocol Buffer message parsing
+- `colorlog`: Colored console logging
+
+### 2. Configure Environment Variables
+
+Create a `.env` file or export variables:
+
+```bash
+export SUPABASE_URL="https://cdwtsrzshpotkfbyyyjk.supabase.co"
+export SUPABASE_API_KEY="<your-service-role-key>"
+export FLY_INGEST_SECRET="<your-hmac-secret>"
+export LOG_LEVEL="DEBUG"  # Optional: DEBUG, INFO, WARNING, ERROR
+```
+
+**Critical**: Use the **service role key**, not the anon key. The service key has database write permissions.
+
+### 3. Run Local Server
+
+```bash
+python main.py
+```
+
+Server now listening on: **UDP port 5683**
+
+You should see output:
+```
+[12:34:56] INFO - CoAP server starting on port 5683
+[12:34:56] INFO - Health check endpoint available at http://localhost:8000/health
+```
+
+### 4. Test Locally
+
+In a separate terminal, test the endpoint:
+
+```bash
+# Install CoAP client tool
+pip install aiocoap[all]
+
+# Send test message
+echo "test" | coap-client -m POST coap://localhost:5683/data
+
+# Check server logs for message reception
+```
+
+## Project Structure
+
+```
+CoAP-bridge (FlyIO)/
+├── main.py                  # CoAP server entry point
+├── store_to_supabase.py     # Supabase HTTP client
+├── uplink_pb2.py            # Generated protobuf definitions (uplink)
+├── downlink_pb2.py          # Generated protobuf definitions (downlink)
+├── requirements.txt         # Python dependencies
+├── Dockerfile               # Container build configuration
+├── fly.toml                 # Fly.io deployment config
+└── Protobuf/
+    ├── uplink.proto         # Uplink message definitions
+    └── downlink.proto       # Downlink message definitions (future)
+```
+
+### Core Files
+
+**main.py**:
+- CoAP server using `aiocoap` library
+- Handles `/data` endpoint for device messages
+- Parses Protocol Buffer payloads
+- Calls `store_to_supabase()` for data forwarding
+- Provides `/health` HTTP endpoint for monitoring
+
+**store_to_supabase.py**:
+- HTTP client for Supabase Edge Function
+- Generates HMAC signatures
+- Handles retries and error recovery
+- Transforms protobuf data to JSON
+
+**uplink_pb2.py**:
+- Auto-generated from `Protobuf/uplink.proto`
+- Defines message structures for device-to-server communication
+- **Do not edit manually** - regenerate when .proto changes
+
+## Development Workflow
+
+### Modifying Message Processing
+
+When you need to change how messages are processed:
+
+1. **Update Protobuf schema** (if message structure changes):
+   ```bash
+   cd Protobuf
+   # Edit uplink.proto or downlink.proto
+
+   # Regenerate Python code
+   protoc --python_out=.. uplink.proto
+   ```
+
+2. **Modify processing logic** in `main.py`:
+   ```python
+   # Example: Add new sensor data type handling
+   async def process_uplink(payload):
+       uplink = uplink_pb2.Uplink()
+       uplink.ParseFromString(payload)
+
+       # Your new logic here
+       if uplink.HasField('new_sensor_type'):
+           logger.info(f"Processing new sensor type: {uplink.new_sensor_type}")
+   ```
+
+3. **Update Supabase forwarding** in `store_to_supabase.py`:
+   ```python
+   # Transform new fields to JSON
+   data = {
+       "devid": config.dev_id,
+       "new_field": uplink.new_sensor_type.value
+   }
+   ```
+
+4. **Test locally** before deploying
+
+### Testing with Real Devices
+
+**Production testing** (use with caution):
+```bash
+# Point device to production server
+echo "test" | coap-client -m POST coap://flyio-nbiot.fly.dev:5683/data
+```
+
+**Local testing** with device:
+1. Configure device to send to your local IP
+2. Ensure port 5683 is accessible (firewall rules)
+3. Use mobile hotspot or local network
+4. Monitor `main.py` logs for incoming messages
+
+### Debugging Tips
+
+**Enable verbose logging**:
+```bash
+export LOG_LEVEL="DEBUG"
+python main.py
+```
+
+**Inspect raw protobuf messages**:
+```python
+# Add to main.py
+logger.debug(f"Raw payload (hex): {payload.hex()}")
+```
+
+**Test HMAC signature generation**:
+```bash
+python3 -c "from store_to_supabase import generate_hmac; print(generate_hmac({'test': 'data'}))"
+```
+
+## Deployment to Fly.io
+
+### Prerequisites
+
+1. **Fly.io CLI** installed and authenticated:
+   ```bash
+   flyctl auth login
+   ```
+
+2. **Access to `flyio-nbiot` app**:
+   ```bash
+   flyctl apps list  # Verify you see flyio-nbiot
+   ```
+
+### Initial Deployment
+
+```bash
+cd CoAP-bridge
+
+# Deploy (builds container and deploys)
+flyctl deploy
+
+# Monitor deployment
+flyctl status
+flyctl logs
+```
+
+### Updating the Server
+
+After making code changes:
+
+```bash
+# Deploy updated code
+flyctl deploy
+
+# Watch logs during deployment
+flyctl logs --app flyio-nbiot
+```
+
+**Deployment process**:
+1. Builds Docker container locally
+2. Pushes to Fly.io registry
+3. Creates new machine instance
+4. Performs health check
+5. Routes traffic to new instance
+6. Shuts down old instance
+
+### Environment Configuration
+
+**View current secrets**:
+```bash
+flyctl secrets list
+```
+
+**Set or update secrets**:
+```bash
+flyctl secrets set SUPABASE_URL="https://cdwtsrzshpotkfbyyyjk.supabase.co"
+flyctl secrets set SUPABASE_API_KEY="<service-role-key>"
+flyctl secrets set FLY_INGEST_SECRET="<hmac-secret>"
+flyctl secrets set LOG_LEVEL="INFO"
+```
+
+**Remove secret**:
+```bash
+flyctl secrets unset SECRET_NAME
+```
+
+### fly.toml Configuration
+
+```toml
+app = 'flyio-nbiot'
+primary_region = 'arn'  # Stockholm region
+
+[build]
+  dockerfile = "Dockerfile"
+
+[[services]]
+  protocol = "udp"
+  internal_port = 5683
+  processes = ["app"]
+
+  [[services.ports]]
+    port = 5683
+
+[[services]]
+  protocol = "tcp"
+  internal_port = 8000
+  processes = ["app"]
+
+  [[services.ports]]
+    port = 8000
+
+[[vm]]
+  memory = '256mb'
+  cpu_kind = 'shared'
+  cpus = 1
+```
+
+**Key settings**:
+- **UDP service**: Port 5683 for CoAP messages
+- **TCP service**: Port 8000 for health checks
+- **Memory**: 256MB (increase if needed)
+- **Region**: `arn` (Stockholm) - low latency for European devices
+
+## Monitoring and Troubleshooting
+
+### Real-time Monitoring
+
+**View live logs**:
+```bash
+flyctl logs --app flyio-nbiot
+```
+
+**Application status**:
+```bash
+flyctl status --app flyio-nbiot
+```
+
+**Resource usage**:
+```bash
+flyctl metrics --app flyio-nbiot
+```
+
+**SSH into container** (for debugging):
+```bash
+flyctl ssh console --app flyio-nbiot
+
+# Inside container, check:
+python3 -c "import os; print(os.getenv('SUPABASE_URL'))"
+ps aux  # Check running processes
+netstat -tulpn  # Check listening ports
+```
+
+### Log Analysis
+
+The server uses structured, color-coded logging:
+
+- 🟢 **INFO**: Successful message processing
+- 🟡 **WARNING**: Recoverable errors or retries
+- 🔴 **ERROR**: Failed operations requiring attention
+- 🔵 **DEBUG**: Detailed message content and parsing
+
+**Example log output**:
+```
+[12:34:56] INFO - Received CoAP message from 192.0.2.1
+[12:34:56] DEBUG - Parsed device ID: 12345
+[12:34:56] INFO - Successfully stored to Supabase
+[12:34:57] ERROR - HMAC verification failed for device 67890
+```
+
+### Common Issues
+
+#### Connection Refused Errors
+
+**Symptoms**: Devices cannot reach server, logs show no incoming messages
+
+**Solutions**:
+```bash
+# Check if app is running
+flyctl status
+
+# Restart machine
+flyctl machine restart <machine-id>
+
+# Verify UDP port is open
+flyctl checks list
+```
+
+#### Supabase Connection Failures
+
+**Symptoms**: Logs show "Failed to forward to Supabase"
+
+**Solutions**:
+```bash
+# Verify environment variables
+flyctl secrets list
+
+# Test from container
+flyctl ssh console
+curl -I https://cdwtsrzshpotkfbyyyjk.supabase.co
+
+# Check service role key is set correctly
+python3 -c "import os; print('Key set:', bool(os.getenv('SUPABASE_API_KEY')))"
+```
+
+#### Protobuf Parsing Errors
+
+**Symptoms**: Logs show "Failed to parse protobuf message"
+
+**Causes**:
+- Device using outdated firmware with old protobuf schema
+- Corrupted message during transmission
+- Wrong protobuf definition version
+
+**Solutions**:
+1. Check device firmware version
+2. Compare .proto files between firmware and server
+3. Regenerate protobuf code if schema changed
+4. Enable DEBUG logging to see raw payload hex
+
+#### High Memory Usage
+
+**Symptoms**: App crashes or restarts frequently
+
+**Solutions**:
+```bash
+# Check current memory usage
+flyctl metrics --app flyio-nbiot
+
+# Scale to larger instance
+flyctl scale memory 512 --app flyio-nbiot
+
+# Monitor after scaling
+flyctl logs | grep "memory"
+```
+
+## Maintenance
+
+### Regular Tasks
+
+**Weekly**:
+- Review error logs: `flyctl logs | grep ERROR`
+- Check memory/CPU usage: `flyctl metrics`
+- Verify Supabase connectivity
+
+**Monthly**:
+- Update Python dependencies in `requirements.txt`
+- Check for Fly.io platform updates: `flyctl version`
+- Review and rotate HMAC secrets if needed
+
+**As Needed**:
+- Update protobuf schemas when firmware changes
+- Modify data processing logic
+- Adjust logging levels for debugging
+
+### Updating Dependencies
+
+```bash
+# Update requirements.txt with new versions
+pip install --upgrade <package-name>
+pip freeze > requirements.txt
+
+# Test locally first
+python main.py
+
+# Deploy to production
+flyctl deploy
+
+# Monitor for issues
+flyctl logs
+```
+
+### Scaling Operations
+
+**Vertical scaling** (more resources per instance):
+```bash
+flyctl scale memory 512 --app flyio-nbiot
+flyctl scale cpu 2 --app flyio-nbiot
+```
+
+**Horizontal scaling** (more instances):
+```bash
+flyctl scale count 2 --app flyio-nbiot
+```
+
+**Geographic distribution**:
+```bash
+# Add instance in different region
+flyctl regions add lax  # Los Angeles
+flyctl scale count 2
+```
+
+## Security Best Practices
+
+### Environment Variables
+- All secrets stored in Fly.io secrets (never in code)
+- Service role key never logged or exposed
+- HMAC secret rotated periodically
+
+### HMAC Signatures
+- All Supabase requests include HMAC signature
+- Signature calculated over entire request body
+- Prevents unauthorized data injection
+
+### Input Validation
+- Protobuf schema enforces message structure
+- Type checking on all fields
+- Invalid messages rejected before processing
+
+### Error Handling
+- No sensitive data in error messages
+- Logs sanitized to remove keys/secrets
+- Failed messages logged with device ID only
+
+### Access Control
+- Only authorized developers can deploy
+- Fly.io access managed via organization
+- Production credentials separate from development
+
+## Performance Optimization
+
+### Connection Pooling
+The `aiohttp` client uses connection pooling for Supabase requests:
+
+```python
+# In store_to_supabase.py
+connector = aiohttp.TCPConnector(limit=100, limit_per_host=30)
+session = aiohttp.ClientSession(connector=connector)
+```
+
+### Async Processing
+All I/O operations are asynchronous to handle concurrent device messages:
+
+```python
+# Multiple devices can send messages simultaneously
+async def handle_coap_message(request):
+    payload = request.payload
+    await process_uplink(payload)  # Non-blocking
+    return aiocoap.Message(code=aiocoap.CHANGED)
+```
+
+### Retry Logic
+Failed Supabase requests are retried with exponential backoff:
+
+```python
+retries = 5
+for attempt in range(retries):
+    try:
+        await send_to_supabase(data)
+        break
+    except Exception as e:
+        if attempt < retries - 1:
+            await asyncio.sleep(2 ** attempt)  # 1s, 2s, 4s, 8s, 16s
+```
+
+## Health Checks
+
+The server exposes a health check endpoint for monitoring:
+
+**Endpoint**: `http://flyio-nbiot.fly.dev:8000/health`
+
+**Response**:
+```json
+{
+  "status": "healthy",
+  "timestamp": "2024-11-16T12:34:56.789Z",
+  "uptime_seconds": 86400,
+  "messages_processed": 1234
+}
+```
+
+**Fly.io health checks**:
+```toml
+[[services.http_checks]]
+  interval = "10s"
+  timeout = "2s"
+  grace_period = "5s"
+  method = "get"
+  path = "/health"
+```

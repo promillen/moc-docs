@@ -1,0 +1,679 @@
+# Dashboard Development
+
+The MOC-IoT Dashboard is a React TypeScript application providing real-time monitoring and management of IoT devices. This guide covers local development, component architecture, deployment, and troubleshooting.
+
+## Local Development Setup
+
+### Prerequisites
+
+- Node.js 18+ and npm
+- Git
+- Text editor (VS Code recommended)
+- Supabase account access
+
+### 1. Install Dependencies
+
+```bash
+cd Dashboard
+npm install
+```
+
+**Key dependencies installed**:
+- React 18 + TypeScript + Vite
+- shadcn-ui components (Radix UI primitives)
+- Tailwind CSS
+- TanStack Query (React Query)
+- Leaflet (maps)
+- Recharts (visualization)
+- Supabase client
+
+### 2. Configuration
+
+The Supabase connection is configured in `src/integrations/supabase/client.ts`:
+
+```typescript
+import { createClient } from '@supabase/supabase-js';
+
+const SUPABASE_URL = "https://cdwtsrzshpotkfbyyyjk.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...";
+
+export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+```
+
+**No `.env` file needed** for local development - credentials are embedded.
+
+### 3. Start Development Server
+
+```bash
+npm run dev
+```
+
+Dashboard running at: **http://localhost:8080**
+
+### 4. Available Scripts
+
+```bash
+npm run dev          # Development server (localhost:8080)
+npm run build        # Production build
+npm run build:dev    # Development build with source maps
+npm run lint         # Run ESLint
+npm run preview      # Preview production build
+```
+
+## Project Structure
+
+```
+Dashboard/src/
+├── components/
+│   ├── ui/                    # shadcn-ui component library
+│   │   ├── button.tsx
+│   │   ├── card.tsx
+│   │   ├── dialog.tsx
+│   │   └── ...
+│   ├── AppSidebar.tsx         # Main navigation sidebar
+│   ├── DeviceList.tsx         # Device management interface
+│   ├── MapView.tsx            # Interactive device location map
+│   ├── UserManagement.tsx     # Admin user controls
+│   ├── DeviceLogViewer.tsx    # Device activity logs
+│   └── ...
+├── hooks/
+│   ├── useAuth.tsx            # Authentication state management
+│   ├── useUserRole.tsx        # Role-based permissions
+│   └── ...
+├── integrations/supabase/
+│   ├── client.ts              # Supabase client configuration
+│   ├── types.ts               # Generated TypeScript types
+│   └── ...
+├── pages/
+│   ├── Dashboard.tsx          # Main dashboard layout
+│   ├── Auth.tsx               # Login/authentication page
+│   └── ...
+├── lib/
+│   └── utils.ts               # Utility functions
+├── App.tsx                    # Root application component
+└── main.tsx                   # Application entry point
+```
+
+## Core Components
+
+### Device List Component
+
+Displays all devices with filtering, search, and management:
+
+```typescript
+// components/DeviceList.tsx
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
+
+interface DeviceConfig {
+  devid: string;
+  name: string;
+  iccid: string;
+  heartbeat_interval: number;
+  sw_version: string;
+  hw_version: string;
+  last_seen: string;
+  battery_level: number;
+}
+
+export const DeviceList = () => {
+  const { data: devices, isLoading } = useQuery({
+    queryKey: ['devices'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('device_config')
+        .select('*')
+        .order('last_seen', { ascending: false });
+
+      if (error) throw error;
+      return data;
+    },
+    refetchInterval: 30000, // Refresh every 30 seconds
+  });
+
+  if (isLoading) return <LoadingSkeleton />;
+
+  return (
+    <div className="space-y-4">
+      {devices?.map((device) => (
+        <DeviceCard key={device.devid} device={device} />
+      ))}
+    </div>
+  );
+};
+```
+
+### Interactive Map Component
+
+Uses Leaflet for real-time device location display:
+
+```typescript
+// components/MapView.tsx
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import MarkerClusterGroup from 'react-leaflet-markercluster';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
+
+export const MapView = () => {
+  const { data: locations } = useQuery({
+    queryKey: ['device-locations'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('locations')
+        .select(`
+          devid,
+          latitude,
+          longitude,
+          accuracy,
+          created_at,
+          device_config(name)
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      return data;
+    }
+  });
+
+  // Real-time location updates
+  useEffect(() => {
+    const subscription = supabase
+      .channel('location-updates')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'locations'
+      }, (payload) => {
+        // Update map with new location
+        queryClient.invalidateQueries(['device-locations']);
+      })
+      .subscribe();
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  return (
+    <MapContainer center={[55.6761, 12.5683]} zoom={10} className="h-full">
+      <TileLayer
+        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        attribution='&copy; OpenStreetMap contributors'
+      />
+      <MarkerClusterGroup>
+        {locations?.map((loc) => (
+          <Marker
+            key={`${loc.devid}-${loc.created_at}`}
+            position={[loc.latitude, loc.longitude]}
+          >
+            <Popup>
+              <div>
+                <h3>{loc.device_config?.name || loc.devid}</h3>
+                <p>Accuracy: {loc.accuracy}m</p>
+                <p>Time: {new Date(loc.created_at).toLocaleString()}</p>
+              </div>
+            </Popup>
+          </Marker>
+        ))}
+      </MarkerClusterGroup>
+    </MapContainer>
+  );
+};
+```
+
+### Authentication Hooks
+
+Role-based access control with Supabase Auth:
+
+```typescript
+// hooks/useAuth.tsx
+import { useState, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import type { User } from '@supabase/supabase-js';
+
+export const useAuth = () => {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      setLoading(false);
+    });
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setUser(session?.user ?? null);
+        setLoading(false);
+      }
+    );
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  return { user, loading };
+};
+
+// hooks/useUserRole.tsx
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from './useAuth';
+
+export const useUserRole = () => {
+  const { user } = useAuth();
+
+  const { data: userRole, isLoading } = useQuery({
+    queryKey: ['user-role', user?.id],
+    queryFn: async () => {
+      if (!user) return null;
+
+      const { data, error } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', user.id)
+        .single();
+
+      if (error) throw error;
+      return data.role;
+    },
+    enabled: !!user,
+  });
+
+  return {
+    role: userRole,
+    isAdmin: userRole === 'admin',
+    isModerator: ['admin', 'moderator'].includes(userRole),
+    isLoading
+  };
+};
+```
+
+## Real-Time Subscriptions
+
+### Setting Up Subscriptions
+
+The dashboard uses Supabase real-time for live updates:
+
+```typescript
+// Example: Device status updates
+useEffect(() => {
+  const subscription = supabase
+    .channel('device-updates')
+    .on('postgres_changes', {
+      event: 'UPDATE',
+      schema: 'public',
+      table: 'device_config'
+    }, (payload) => {
+      // Invalidate query to refetch data
+      queryClient.invalidateQueries(['devices']);
+    })
+    .on('postgres_changes', {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'sensor_data'
+    }, (payload) => {
+      // Handle new sensor data
+      handleNewSensorData(payload.new);
+    })
+    .subscribe();
+
+  return () => {
+    subscription.unsubscribe();
+  };
+}, []);
+```
+
+### Subscription Best Practices
+
+**Cleanup subscriptions**:
+```typescript
+useEffect(() => {
+  const subscription = supabase.channel('my-channel')...
+  return () => subscription.unsubscribe(); // Always cleanup
+}, []);
+```
+
+**Filter subscriptions**:
+```typescript
+.on('postgres_changes', {
+  event: 'INSERT',
+  schema: 'public',
+  table: 'sensor_data',
+  filter: 'devid=eq.12345' // Only listen for specific device
+}, callback)
+```
+
+**Batch updates**:
+```typescript
+const [updates, setUpdates] = useState([]);
+
+// Collect updates
+const handleUpdate = (payload) => {
+  setUpdates(prev => [...prev, payload.new]);
+};
+
+// Process batch every second
+useEffect(() => {
+  const timer = setInterval(() => {
+    if (updates.length > 0) {
+      processBatchUpdates(updates);
+      setUpdates([]);
+    }
+  }, 1000);
+
+  return () => clearInterval(timer);
+}, [updates]);
+```
+
+## Data Visualization
+
+### Activity Chart Component
+
+```typescript
+// components/DeviceActivityChart.tsx
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
+
+export const DeviceActivityChart = ({ deviceId }: { deviceId: string }) => {
+  const { data: activityData } = useQuery({
+    queryKey: ['device-activity', deviceId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('activity')
+        .select('*')
+        .eq('devid', deviceId)
+        .order('created_at', { ascending: false })
+        .limit(24);
+
+      if (error) throw error;
+      return data;
+    }
+  });
+
+  return (
+    <ResponsiveContainer width="100%" height={300}>
+      <BarChart data={activityData}>
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis dataKey="created_at" />
+        <YAxis />
+        <Tooltip />
+        <Legend />
+        <Bar dataKey="sleep" stackId="a" fill="#8884d8" name="Sleep" />
+        <Bar dataKey="modem" stackId="a" fill="#82ca9d" name="Modem" />
+        <Bar dataKey="gnss" stackId="a" fill="#ffc658" name="GNSS" />
+        <Bar dataKey="wifi" stackId="a" fill="#ff7300" name="WiFi" />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+};
+```
+
+## Performance Optimization
+
+### Query Caching Strategy
+
+```typescript
+// Configure TanStack Query client
+import { QueryClient } from '@tanstack/react-query';
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30 * 1000, // Data fresh for 30 seconds
+      cacheTime: 5 * 60 * 1000, // Cache for 5 minutes
+      refetchOnWindowFocus: false, // Don't refetch on window focus
+      retry: (failureCount, error) => {
+        // Don't retry auth errors
+        if (error?.message?.includes('JWT')) return false;
+        return failureCount < 3;
+      }
+    }
+  }
+});
+```
+
+### Lazy Loading
+
+```typescript
+// Lazy load heavy components
+import { lazy, Suspense } from 'react';
+
+const MapView = lazy(() => import('./components/MapView'));
+const DeviceLogViewer = lazy(() => import('./components/DeviceLogViewer'));
+
+export const Dashboard = () => {
+  return (
+    <Suspense fallback={<LoadingSkeleton />}>
+      {activeView === 'map' && <MapView />}
+      {activeView === 'logs' && <DeviceLogViewer />}
+    </Suspense>
+  );
+};
+```
+
+### Virtual Scrolling
+
+For long device lists, use virtual scrolling:
+
+```typescript
+import { useVirtualizer } from '@tanstack/react-virtual';
+
+export const DeviceList = ({ devices }) => {
+  const parentRef = useRef(null);
+
+  const virtualizer = useVirtualizer({
+    count: devices.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 100, // Estimated row height
+  });
+
+  return (
+    <div ref={parentRef} style={{ height: '600px', overflow: 'auto' }}>
+      <div style={{ height: `${virtualizer.getTotalSize()}px` }}>
+        {virtualizer.getVirtualItems().map((virtualRow) => (
+          <div key={virtualRow.index} style={{ height: `${virtualRow.size}px` }}>
+            <DeviceCard device={devices[virtualRow.index]} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+```
+
+## Building and Deployment
+
+### Production Build
+
+```bash
+# Create optimized production build
+npm run build
+
+# Output directory: dist/
+```
+
+### Development Build
+
+```bash
+# Build with source maps for debugging
+npm run build:dev
+```
+
+### Preview Production Build
+
+```bash
+# Test production build locally
+npm run preview
+```
+
+### Build Configuration
+
+The Vite configuration in `vite.config.ts`:
+
+```typescript
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import path from 'path';
+
+export default defineConfig({
+  plugins: [react()],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
+  },
+  server: {
+    port: 8080,
+  },
+  build: {
+    outDir: 'dist',
+    sourcemap: false, // Set to true for debug builds
+    minify: 'terser',
+    terserOptions: {
+      compress: {
+        drop_console: true, // Remove console.log in production
+      },
+    },
+  },
+});
+```
+
+## Troubleshooting
+
+### Common Issues
+
+#### Real-time Subscriptions Not Working
+
+**Check Supabase connection**:
+```typescript
+// Test connection
+const testConnection = async () => {
+  const { data, error } = await supabase.from('device_config').select('count');
+  console.log('Connection test:', { data, error });
+};
+```
+
+**Verify RLS policies**:
+- Ensure Row Level Security policies allow subscriptions
+- Check user has proper role in `user_roles` table
+
+**Monitor WebSocket**:
+- Open browser DevTools → Network tab
+- Filter by WS (WebSocket)
+- Verify connection to Supabase realtime
+
+#### Authentication Failures
+
+**Clear session**:
+```typescript
+await supabase.auth.signOut();
+localStorage.clear();
+window.location.reload();
+```
+
+**Check role**:
+```typescript
+const { data } = await supabase
+  .from('user_roles')
+  .select('role')
+  .eq('user_id', user.id)
+  .single();
+
+console.log('User role:', data?.role);
+```
+
+#### Map Not Loading
+
+**Verify Leaflet CSS**:
+```typescript
+// In main.tsx or App.tsx
+import 'leaflet/dist/leaflet.css';
+import 'react-leaflet-markercluster/dist/styles.min.css';
+```
+
+**Check marker icons**:
+```typescript
+import L from 'leaflet';
+import icon from 'leaflet/dist/images/marker-icon.png';
+import iconShadow from 'leaflet/dist/images/marker-shadow.png';
+
+let DefaultIcon = L.icon({
+  iconUrl: icon,
+  shadowUrl: iconShadow
+});
+
+L.Marker.prototype.options.icon = DefaultIcon;
+```
+
+#### Performance Issues
+
+**Enable React DevTools Profiler**:
+- Install React DevTools browser extension
+- Record component renders
+- Identify unnecessary re-renders
+
+**Optimize queries**:
+```typescript
+// Use select to limit fields
+.select('devid, name, last_seen') // Only fetch needed fields
+
+// Add limits
+.limit(100) // Paginate large datasets
+
+// Use indexes
+.order('last_seen', { ascending: false }) // Ensure DB index exists
+```
+
+**Memoize expensive computations**:
+```typescript
+import { useMemo } from 'react';
+
+const sortedDevices = useMemo(() => {
+  return devices?.sort((a, b) =>
+    new Date(b.last_seen) - new Date(a.last_seen)
+  );
+}, [devices]);
+```
+
+## Development Tips
+
+### TypeScript Type Safety
+
+Generate types from Supabase schema:
+
+```bash
+npx supabase gen types typescript --project-id cdwtsrzshpotkfbyyyjk > src/integrations/supabase/types.ts
+```
+
+### Debugging Real-time
+
+```typescript
+// Enable debug logging
+supabase.realtime.setAuth('your-token');
+supabase.realtime.connect();
+
+// Listen for all events
+supabase
+  .channel('debug')
+  .on('*', (payload) => console.log('Realtime event:', payload))
+  .subscribe();
+```
+
+### Testing Authentication
+
+```typescript
+// Test login flow
+const testAuth = async () => {
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: 'test@example.com',
+    password: 'password123'
+  });
+
+  console.log('Auth result:', { data, error });
+
+  // Check session
+  const { data: session } = await supabase.auth.getSession();
+  console.log('Session:', session);
+};
+```

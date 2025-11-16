@@ -1,0 +1,318 @@
+# Data Flow
+
+This page illustrates the detailed data flow patterns for different types of device messages in the MOC-IoT system.
+
+## Heartbeat Flow
+
+Heartbeat messages contain device configuration, activity tracking, and optional reboot information. They are sent periodically to maintain device status.
+
+```mermaid
+sequenceDiagram
+    participant Device as IoT Device
+    participant Fly as Fly.io Server
+    participant Edge as Edge Function
+    participant DB as Database
+    participant Dashboard
+
+    Device->>Fly: CoAP POST /data<br/>Protobuf payload
+    Note over Device,Fly: UDP port 5683
+
+    Fly->>Fly: Parse Protobuf<br/>Extract heartbeat data
+    Fly->>Edge: HTTP POST<br/>JSON + HMAC signature
+    Note over Fly,Edge: HTTPS with X-Signature header
+
+    Edge->>Edge: Verify HMAC<br/>Validate payload
+    Edge->>DB: INSERT device_config<br/>UPDATE last_seen
+    Edge->>DB: INSERT activity<br/>(power consumption)
+    Edge->>DB: INSERT reboot<br/>(if present)
+
+    DB-->>Dashboard: Real-time WebSocket update
+    Note over DB,Dashboard: Supabase subscriptions
+
+    Edge-->>Fly: 200 OK
+    Fly-->>Device: CoAP ACK
+```
+
+### Data Extracted
+
+**Device Configuration**:
+- Device ID and ICCID
+- Hardware/software versions
+- Heartbeat interval
+- Location mode setting
+- Battery level
+- Modem temperature
+
+**Activity Tracking**:
+- Sleep duration
+- Modem active time
+- GNSS usage
+- WiFi scanning time
+- Other operations
+
+**Reboot Information** (optional):
+- Reboot reason code
+- Previous uptime
+- Crash diagnostics
+
+## Location Processing Flow
+
+Location messages use WiFi networks, cellular towers, or GNSS satellites to determine device position. The system integrates with HERE Positioning API for WiFi/cellular triangulation.
+
+```mermaid
+sequenceDiagram
+    participant Device as IoT Device
+    participant Fly as Fly.io Server
+    participant Edge as Edge Function
+    participant HERE as HERE Positioning API
+    participant DB as Database
+    participant Dashboard
+
+    Device->>Fly: CoAP POST<br/>{wifi[], cells[], gnss}
+    Note over Device: Scan networks/satellites
+
+    Fly->>Fly: Parse Protobuf<br/>Extract location data
+    Fly->>Edge: HTTP POST<br/>JSON + HMAC
+
+    Edge->>Edge: Verify HMAC
+
+    alt GNSS data available
+        Edge->>DB: INSERT locations<br/>{lat, lng, accuracy, source: 'gnss'}
+        Note over Edge,DB: Direct GNSS coordinates
+    else WiFi or Cellular data
+        Edge->>HERE: POST /v2/locate<br/>{wifi[], cells[]}
+        Note over Edge,HERE: HTTPS API request
+        HERE-->>Edge: {lat, lng, accuracy}
+        Edge->>DB: INSERT locations<br/>{lat, lng, accuracy, source: 'here'}
+    end
+
+    DB-->>Dashboard: WebSocket update
+    Note over Dashboard: Map marker added/updated
+
+    Edge-->>Fly: 200 OK
+    Fly-->>Device: CoAP ACK
+```
+
+### Location Data Types
+
+**GNSS (GPS/GLONASS/Galileo)**:
+- Latitude/longitude coordinates
+- Accuracy estimate (meters)
+- Timestamp
+- Satellite count
+
+**WiFi Positioning**:
+- Array of nearby networks:
+  - BSSID (MAC address)
+  - RSSI (signal strength)
+  - Channel number
+- Processed by HERE API
+
+**Cellular Positioning**:
+- Array of cell towers:
+  - MCC/MNC (network codes)
+  - LAC/CID (cell identifiers)
+  - RSSI (signal strength)
+- Processed by HERE API
+
+### Location Mode Priority
+
+The system supports different location modes configured per device:
+
+1. **GNSS_WIFI**: Try GNSS first, fallback to WiFi
+2. **WIFI_GNSS**: Try WiFi first, fallback to GNSS
+3. **GPS**: GNSS only
+4. **WIFI**: WiFi triangulation only
+5. **NONE**: Location disabled
+
+## Sensor Data Flow
+
+Sensor messages contain domain-specific measurements stored as flexible JSONB in the database.
+
+```mermaid
+sequenceDiagram
+    participant Device as Sensor Device
+    participant Fly as Fly.io Server
+    participant Edge as Edge Function
+    participant DB as Database
+    participant Dashboard
+
+    Device->>Fly: CoAP POST<br/>{sensor_type, data}
+    Note over Device: Environmental readings
+
+    Fly->>Fly: Parse Protobuf<br/>Extract sensor data
+    Fly->>Edge: HTTP POST<br/>JSON + HMAC
+
+    Edge->>Edge: Verify HMAC<br/>Validate data types
+    Edge->>DB: INSERT sensor_data<br/>{data_type, data: {...}}
+    Note over DB: JSONB storage for flexibility
+
+    DB-->>Dashboard: WebSocket update
+    Note over Dashboard: Charts update with new data
+
+    Edge-->>Fly: 200 OK
+    Fly-->>Device: CoAP ACK
+```
+
+### Supported Sensor Types
+
+**Soil Sensors**:
+- Soil moisture (%)
+- Soil temperature (°C)
+- NPK levels (N/P/K mg/kg)
+- pH level
+
+**Generic Sensors**:
+- Custom JSONB payloads
+- Extensible for future sensor types
+
+## Multi-Message Transmission
+
+Devices often send multiple message types in a single transmission cycle to minimize power consumption.
+
+```mermaid
+sequenceDiagram
+    participant Device
+    participant Fly as Fly.io Server
+    participant Edge as Edge Function
+    participant HERE as HERE API
+    participant DB as Database
+
+    Device->>Fly: CoAP POST<br/>{heartbeat, location, sensor_data}
+    Note over Device: Combined message
+
+    Fly->>Fly: Parse Protobuf<br/>Extract all sections
+    Fly->>Edge: HTTP POST<br/>JSON + HMAC
+
+    Edge->>Edge: Verify HMAC
+
+    par Process Heartbeat
+        Edge->>DB: INSERT device_config
+        Edge->>DB: INSERT activity
+    and Process Location
+        Edge->>HERE: Position request
+        HERE-->>Edge: Coordinates
+        Edge->>DB: INSERT locations
+    and Process Sensor Data
+        Edge->>DB: INSERT sensor_data
+    end
+
+    Edge-->>Fly: 200 OK
+    Fly-->>Device: CoAP ACK
+```
+
+### Benefits of Combined Messages
+
+**Power Efficiency**:
+- Single modem wake-up cycle
+- Reduced cellular handshake overhead
+- Lower total transmission time
+
+**Data Consistency**:
+- All data from same timestamp
+- Correlated activity and sensor readings
+- Synchronized location and measurements
+
+**Network Optimization**:
+- Fewer CoAP transactions
+- Reduced UDP overhead
+- Better use of NB-IoT resources
+
+## Real-Time Dashboard Updates
+
+The dashboard receives instant updates via Supabase real-time subscriptions.
+
+```mermaid
+sequenceDiagram
+    participant DB as Database
+    participant Realtime as Supabase Realtime
+    participant Dashboard
+
+    Note over Dashboard: User opens dashboard
+    Dashboard->>Realtime: Subscribe to channels
+    Note over Dashboard,Realtime: WebSocket connection
+
+    Realtime-->>Dashboard: Subscription confirmed
+
+    loop Database Changes
+        DB->>Realtime: INSERT event
+        Note over DB,Realtime: PostgreSQL trigger
+        Realtime->>Realtime: Filter by subscription
+        Realtime-->>Dashboard: Push update
+        Dashboard->>Dashboard: Update UI
+        Note over Dashboard: No page refresh needed
+    end
+```
+
+### Subscription Channels
+
+The dashboard subscribes to specific database events:
+
+**Device Updates**:
+- Table: `device_config`
+- Event: `UPDATE`
+- Updates: Last seen, battery level, version changes
+
+**Location Updates**:
+- Table: `locations`
+- Event: `INSERT`
+- Updates: New map markers
+
+**Sensor Data**:
+- Table: `sensor_data`
+- Event: `INSERT`
+- Updates: Chart data points
+
+**Activity Logs**:
+- Table: `activity`
+- Event: `INSERT`
+- Updates: Power consumption analytics
+
+## Error Handling and Retries
+
+The system implements multiple layers of error recovery.
+
+```mermaid
+sequenceDiagram
+    participant Device
+    participant Fly as Fly.io Server
+    participant Edge as Edge Function
+    participant DB as Database
+
+    Device->>Fly: CoAP POST (attempt 1)
+    Fly->>Edge: HTTP POST
+    Edge-->>Fly: 500 Server Error
+
+    Fly->>Fly: Log error<br/>Retry with backoff
+    Fly->>Edge: HTTP POST (retry 1)
+    Edge->>DB: Database timeout
+    DB-->>Edge: Error
+    Edge-->>Fly: 503 Service Unavailable
+
+    Fly->>Fly: Exponential backoff
+    Fly->>Edge: HTTP POST (retry 2)
+    Edge->>DB: INSERT success
+    DB-->>Edge: OK
+    Edge-->>Fly: 200 OK
+
+    Fly-->>Device: CoAP ACK
+```
+
+### Retry Strategy
+
+**CoAP Bridge (Fly.io)**:
+- Initial retry: 1 second delay
+- Subsequent retries: Exponential backoff (2s, 4s, 8s)
+- Maximum retries: 5 attempts
+- Timeout: 30 seconds per attempt
+
+**Edge Function**:
+- Database retry: 3 attempts with 500ms delay
+- HERE API retry: 2 attempts with 1s delay
+- Timeout: 10 seconds total function execution
+
+**Device Behavior**:
+- Awaits CoAP ACK for 30 seconds
+- Retries message on timeout
+- Stores failed messages locally (if storage available)
+- Resends on next transmission window

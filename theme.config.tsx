@@ -36,18 +36,13 @@ const config: DocsThemeConfig = {
   project: {
     link: 'https://github.com/promillen/moc-docs',
   },
-  docsRepositoryBase: 'https://github.com/promillen/moc-docs/edit/main/pages/',
+  docsRepositoryBase: 'https://github.com/promillen/moc-docs/edit/main',
   footer: {
     content: <span>Copyright © 2025 MOC-IoT Engineering Team</span>,
   },
   navbar: {
     extraContent: <LogoutButton />
-  },
-  head: (
-    <>
-      <script src="/mermaid-zoom.js" defer />
-    </>
-  )
+  }
 }
 
 export default config

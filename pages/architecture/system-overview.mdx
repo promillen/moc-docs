@@ -1,406 +1,196 @@
 # System Overview
 
-The MOC-IoT system is a distributed IoT device management platform designed for monitoring and tracking devices via cellular networks. The architecture prioritizes reliability, scalability, and real-time data processing.
+MOC-IoT is a comprehensive IoT device tracking system designed for monitoring NB-IoT connected devices through a microservices architecture.
 
-## High-Level Architecture
+## Core Components
+
+- **IoT Devices**: NB-IoT/LTE devices sending data via CoAP with Protocol Buffers
+- **CoAP Bridge**: Python 3.11 server on Fly.io handling device communication
+- **Backend**: Supabase (PostgreSQL + Edge Functions + Real-time subscriptions)
+- **Frontend**: React + TypeScript dashboard with shadcn-ui
+
+## High-Level Data Flow
+
+1. Devices encode data with Protobuf → send via CoAP
+2. Fly.io server receives/validates → converts to JSON
+3. Forward to Supabase Edge Functions with HMAC signature
+4. Edge functions validate → process location (HERE API) → store in PostgreSQL
+5. Real-time WebSocket updates → Dashboard displays
+
+## System Architecture Diagram
 
 ```mermaid
 flowchart TD
-    A[IoT Device<br/>NB-IoT/LTE] -->|CoAP/UDP:5683| B[Fly.io Server<br/>flyio-nbiot.fly.dev]
-    B -->|HTTP/HTTPS<br/>HMAC Auth| C[Supabase Edge Function<br/>ingest-sensor-data]
-    C --> D[HERE Positioning API]
-    C --> E[PostgreSQL Database<br/>cdwtsrzshpotkfbyyyjk.supabase.co]
-    E -->|Real-time subscriptions| F[React Dashboard<br/>TypeScript + shadcn-ui]
-    
-    %% New WebSocket Live Logging (v2.0)
-    B -->|Direct WebSocket<br/>WSS:8080/ws| F
-    B -->|Health Check<br/>HTTP:8080/health| F
-    
-    G[(Tables)]
-    E --> G
-    G --> H[device_config]
-    G --> I[sensor_data] 
-    G --> J[activity]
-    G --> K[reboot]
-    G --> L[user_roles]
-    
-    %% Enhanced Database Flow (v2.0)
-    B -->|Enhanced Storage<br/>Individual Error Isolation| E
+    A[IoT Device] -->|CoAP/UDP| B[Fly.io Server]
+    B -->|HTTP/HTTPS + HMAC| C[Supabase Edge Function<br/>ingest-sensor-data]
+
+    C --> D{Data Type}
+    D -->|Location Data| E[HERE Positioning API]
+    D -->|Other Sensors| F[Direct Processing]
+
+    E --> G[Supabase Database]
+    F --> G
+
+    G --> H[Real-time Updates<br/>WebSocket Subscriptions]
+    H --> I[Frontend Dashboard]
+
+    G --> J[(Tables)]
+    J --> K[device_config]
+    J --> L[sensor_data]
+    J --> M[activity]
+    J --> N[reboot]
+    J --> O[locations]
+
+    I --> P[Device List & Filters]
+    I --> Q[Interactive Map]
+    I --> R[User Management]
 ```
 
-### Architecture Evolution (v2.0)
-
-**New Features:**
-- **Direct WebSocket Connection**: Dashboard connects directly to Fly.io for live logs (eliminated Supabase relay)
-- **Health Monitoring**: Real-time connection health checks and diagnostics
-- **Enhanced Database Storage**: Individual operation isolation prevents cascade failures
-- **Test Message System**: Built-in message simulation for debugging
-
-**Benefits:**
-- 50% fewer failure points in WebSocket chain
-- Better error visibility and debugging
-- Improved connection reliability
-- Real-time storage status feedback
-
-## Component Responsibilities
+## Component Descriptions
 
 ### 1. IoT Devices
-- **Communication**: Send data via CoAP protocol over NB-IoT/LTE cellular networks
-- **Message Format**: Protocol Buffers for efficient serialization
-- **Target**: `flyio-nbiot.fly.dev:5683` (UDP)
-- **Authentication**: Devices authenticated via message content validation
 
-### 2. CoAP Bridge (Fly.io Server)
-- **Location**: `flyio-nbiot` app on Fly.io platform
-- **Runtime**: Python 3.11 with asyncio
-- **Primary Function**: Receive CoAP messages, parse Protocol Buffers, forward to Supabase
-- **Libraries**: aiocoap, aiohttp, protobuf, colorlog
-- **Configuration**: Environment variables for Supabase connection
+**Purpose**: Battery-powered devices transmitting sensor data and location information
+
+**Communication**:
+- Protocol: CoAP over NB-IoT/LTE cellular networks
+- Encoding: Protocol Buffers for compact binary serialization
+- Target: `flyio-nbiot.fly.dev:5683` (UDP)
+
+**Capabilities**:
+- Multi-mode location (GNSS, WiFi, Cellular)
+- Sensor data collection (temperature, humidity, soil moisture, etc.)
+- Power consumption tracking
+- Remote configuration updates
+
+### 2. CoAP Bridge (Fly.io)
+
+**Purpose**: Protocol translator between IoT devices and cloud backend
+
+**Deployment**:
+- Platform: Fly.io container deployment
+- App Name: `flyio-nbiot`
+- Runtime: Python 3.11 with asyncio
+- Region: Global edge locations
+
+**Responsibilities**:
+- Receive CoAP messages on UDP port 5683
+- Parse and validate Protocol Buffer payloads
+- Transform binary data to JSON format
+- Forward to Supabase with HMAC authentication
+- Handle retries and error recovery
+
+**Key Libraries**:
+- `aiocoap`: Asynchronous CoAP protocol handling
+- `aiohttp`: HTTP client for Supabase communication
+- `protobuf`: Message parsing and validation
 
 ### 3. Supabase Backend
-- **Edge Functions**: Handle HTTP requests from CoAP bridge
-- **Database**: PostgreSQL with Row Level Security (RLS)
-- **Real-time**: WebSocket subscriptions for live updates
-- **Location Services**: Integration with HERE Positioning API
-- **Project**: `cdwtsrzshpotkfbyyyjk.supabase.co`
+
+**Purpose**: Centralized data storage, processing, and real-time distribution
+
+**Components**:
+- **Edge Functions**: Serverless HTTP endpoints for data ingestion (`ingest-sensor-data`)
+- **PostgreSQL Database**: Structured data storage with Row Level Security
+- **Real-time Engine**: WebSocket-based subscriptions for live updates
+- **Authentication**: User management and session handling
+
+**External Integrations**:
+- HERE Positioning API for WiFi/cellular location triangulation
+- HMAC signature verification for server-to-server authentication
+
+**Database Tables**:
+- `device_config`: Device metadata, versions, heartbeat tracking
+- `sensor_data`: Flexible JSONB storage for various sensor types
+- `locations`: Dedicated location data with coordinates and accuracy
+- `activity`: Power consumption per message
+- `reboot`: Device restart/crash diagnostics
+- `profiles`: User profile information
+- `user_roles`: Role-based access control (admin/moderator/developer/user)
+- `device_access`: User-device permissions
 
 ### 4. React Dashboard
-- **Framework**: React 18 + TypeScript + Vite
-- **UI Components**: shadcn-ui with Tailwind CSS
-- **State Management**: TanStack Query for server state
-- **Mapping**: Leaflet for interactive device locations
-- **Authentication**: Supabase Auth with role-based access
 
-## Technology Choices
+**Purpose**: Web-based interface for real-time device monitoring and management
 
-### Why CoAP?
+**Technology Stack**:
+- React 18 + TypeScript + Vite
+- shadcn-ui + Tailwind CSS
+- TanStack Query (state management)
+- Leaflet (interactive maps)
+- Recharts (data visualization)
+
+**Features**:
+- Real-time device status monitoring
+- Interactive location mapping
+- Sensor data visualization
+- User and device access management
+- Role-based permissions
+
+## Technology Choices & Rationale
+
+### CoAP Protocol
 - **Lightweight**: Minimal overhead for battery-powered devices
-- **UDP-based**: Suitable for cellular networks with intermittent connectivity
-- **Standardized**: RFC 7252 specification ensures interoperability
+- **UDP-based**: Efficient for intermittent connectivity
+- **Low bandwidth**: Critical for NB-IoT cellular networks
+- **Designed for IoT**: Built-in support for constrained devices
 
-### Why Protocol Buffers?
-- **Efficiency**: 3-10x smaller than JSON for typical IoT payloads
-- **Schema Evolution**: Backward and forward compatibility for firmware updates
-- **Language Support**: Generated code for Python (server) and C++ (firmware)
+### Protocol Buffers
+- **Compact**: 3-10x smaller than JSON payloads
+- **Schema evolution**: Backward/forward compatibility
+- **Type safety**: Compile-time validation
+- **Cross-language**: Consistent definitions across firmware, server, dashboard
 
-### Why Fly.io?
-- **Global Edge**: Servers deployed close to cellular network gateways
-- **UDP Support**: Native support for CoAP protocol requirements
-- **Container Platform**: Easy deployment and scaling of Python applications
-- **Cost Effective**: Pay-per-use model suitable for IoT workloads
+### Fly.io Platform
+- **Global edge deployment**: Low latency worldwide
+- **Native UDP support**: Direct CoAP protocol handling
+- **Container-based**: Easy deployment and scaling
+- **Anycast routing**: Automatic geographic load balancing
 
-### Why Supabase?
-- **Real-time**: Built-in WebSocket subscriptions for dashboard updates
-- **Edge Functions**: Serverless compute for data processing
-- **PostgreSQL**: Flexible JSON storage for diverse sensor data
-- **Authentication**: Built-in auth system with role-based access control
+### Supabase Backend
+- **Real-time subscriptions**: WebSocket updates to dashboard
+- **PostgreSQL**: ACID compliance, complex queries, JSONB flexibility
+- **Edge functions**: Serverless, auto-scaling
+- **Built-in authentication**: JWT tokens, Row Level Security
+- **Developer experience**: Auto-generated TypeScript types
 
-## Data Flow Sequences
+## Message Routing Logic
 
-### Device Heartbeat Flow
-
-```mermaid
-sequenceDiagram
-    participant Device as IoT Device
-    participant Fly as Fly.io Server
-    participant Edge as Edge Function
-    participant DB as Database
-    participant Dashboard as Dashboard
-
-    Device->>Fly: CoAP POST /data<br/>Protobuf: {config, activity, reboot}
-    Note right of Fly: Parse protobuf<br/>Extract device data
-    Fly->>Edge: HTTP POST<br/>JSON + HMAC signature
-    Note right of Edge: Verify HMAC<br/>Validate payload
-    Edge->>DB: INSERT device_config<br/>INSERT activity, reboot
-    DB-->>Dashboard: Real-time WebSocket<br/>notification
-    Note right of Dashboard: Update device status<br/>Refresh UI components
-```
+The system automatically routes incoming data based on message content:
 
 ### Location Data Processing
+**Triggers**: Messages containing `wifi[]`, `cells[]`, or `gnss` fields
+**Flow**: CoAP Bridge → Edge Function → HERE API → `locations` table
+**Dashboard**: Map markers update in real-time via WebSocket
 
-```mermaid
-sequenceDiagram
-    participant Device as IoT Device
-    participant Fly as Fly.io Server
-    participant Edge as Edge Function
-    participant HERE as HERE API
-    participant DB as Database
-    participant Dashboard as Dashboard
+### Sensor Data Processing
+**Triggers**: Sensor readings (temperature, humidity, soil, etc.)
+**Flow**: CoAP Bridge → Edge Function → `sensor_data` table
+**Dashboard**: Charts update with new data points
 
-    Device->>Fly: CoAP POST /data<br/>Protobuf: {wifi[], cells[], gnss}
-    Fly->>Edge: HTTP POST<br/>WiFi/Cell data + HMAC
-    Edge->>HERE: Position request<br/>{wlan: [...], cell: [...]}
-    HERE-->>Edge: Location response<br/>{lat, lng, accuracy}
-    Edge->>DB: INSERT sensor_data<br/>type: 'location'
-    DB-->>Dashboard: Real-time update
-    Note right of Dashboard: Update map markers<br/>Show new device location
-```
+### Device Configuration
+**Triggers**: Heartbeat messages with config updates
+**Flow**: CoAP Bridge → Edge Function → `device_config` table
+**Dashboard**: Device status refreshes
 
-### Sensor Data Processing (Non-Geolocation)
+### Activity Tracking
+**Triggers**: Power consumption data (sleep, modem, GNSS, WiFi duration)
+**Flow**: CoAP Bridge → Edge Function → `activity` table
+**Dashboard**: Battery analytics update
 
-```mermaid
-sequenceDiagram
-    participant Device as Soil Sensor Device
-    participant Fly as Fly.io Server
-    participant Edge as Edge Function
-    participant DB as Database
-    participant Dashboard as Dashboard
+## Scalability Considerations
 
-    Device->>Fly: CoAP POST /data<br/>Protobuf: {temperature, humidity, npk, ph}
-    Note right of Fly: Parse sensor data<br/>No location processing
-    Fly->>Edge: HTTP POST<br/>Sensor data + HMAC
-    Note right of Edge: Skip HERE API<br/>Direct storage
-    Edge->>DB: INSERT sensor_data<br/>type: 'soil_data'
-    DB-->>Dashboard: Real-time update
-    Note right of Dashboard: Update sensor charts<br/>No map changes
-```
+### Horizontal Scaling
+- **Fly.io**: Multiple instances across regions
+- **Supabase**: Auto-scaling database connections
+- **Edge Functions**: Serverless, infinite scaling
 
-## Data Processing Logic
+### Vertical Optimization
+- **Protocol Buffers**: Minimal parsing overhead
+- **Connection pooling**: Efficient database usage
+- **Real-time batching**: Reduced WebSocket overhead
 
-### Message Type Routing
-The Edge Function automatically determines how to process incoming data based on message content:
-
-#### Location Data (Uses HERE API)
-- **Triggers**: Messages containing `wifi[]`, `cells[]`, or `gnss` data
-- **Processing**: Sent to HERE Positioning API for coordinate calculation
-- **Storage**: Results stored as `sensor_data` with `data_type: 'location'`
-- **Dashboard Impact**: Updates device location on map
-
-#### Sensor Data (Direct Storage)
-- **Triggers**: Messages containing sensor readings (temperature, humidity, soil data, etc.)
-- **Processing**: Direct validation and storage, no external APIs
-- **Storage**: Stored as `sensor_data` with appropriate `data_type` (e.g., 'soil_data', 'temperature')
-- **Dashboard Impact**: Updates sensor charts and readings
-
-#### Configuration Data (Device Management)
-- **Triggers**: Messages containing device configuration updates
-- **Processing**: Updates device metadata and settings
-- **Storage**: Updates `device_config` table
-- **Dashboard Impact**: Refreshes device status and information
-
-### Response Times
-- **CoAP Processing**: < 50ms average
-- **Edge Function**: < 200ms (with HERE API), < 50ms (sensor data only)
-- **Database Operations**: < 100ms for typical queries
-- **Dashboard Updates**: Real-time (< 1 second)
-
-## Security Architecture
-
-### Device-to-Server Security
-- **Device Identification**: Devices identified by `dev_id` field in protobuf payload
-- **Message Integrity**: Payload validation via protobuf schema
-- **Network Security**: Cellular network encryption (LTE/NB-IoT)
-
-### Server-to-Server Security
-- **HMAC Authentication**: All Fly.io → Supabase requests signed with shared secret
-- **TLS Encryption**: All HTTP/HTTPS communications encrypted
-- **Environment Isolation**: Secrets stored in Fly.io and Supabase environments
-
-### Dashboard Security
-- **User Authentication**: Email/password via Supabase Auth
-- **Role-Based Access**: Developer, admin, moderator, user roles with different permissions
-- **Row Level Security**: Database-level access control policies
-- **Session Management**: JWT tokens with configurable expiration
-
-## Live Logging System (v2.0)
-
-The enhanced live logging system provides real-time visibility into device activity and system health for development and debugging purposes.
-
-### WebSocket Architecture
-
-```mermaid
-sequenceDiagram
-    participant Dashboard as React Dashboard
-    participant FlyWS as Fly.io WebSocket<br/>(:8080/ws)
-    participant FlyCoAP as CoAP Server<br/>(:5683/uplink)
-    participant DB as Supabase DB
-
-    Dashboard->>FlyWS: Connect wss://flyio-nbiot.fly.dev/ws?deviceId=ABC123
-    FlyWS->>Dashboard: Connection established + system message
-    Dashboard->>FlyWS: Send ping (health check)
-    FlyWS->>Dashboard: Send pong (connection healthy)
-    
-    Note over FlyCoAP,DB: Device Message Processing
-    FlyCoAP->>FlyCoAP: Parse CoAP/Protobuf message
-    
-    par Database Storage
-        FlyCoAP->>DB: Store device_config (ensure exists)
-        FlyCoAP->>DB: Store activity (isolated)
-        FlyCoAP->>DB: Store sensor_data (isolated)
-        FlyCoAP->>FlyWS: Broadcast storage status<br/>{success_rate, operation_details}
-    and Live Message Broadcasting
-        FlyCoAP->>FlyWS: Broadcast parsed message<br/>{type: "heartbeat", deviceId, data}
-        FlyCoAP->>FlyWS: Broadcast parsed message<br/>{type: "activity", deviceId, data}
-        FlyCoAP->>FlyWS: Broadcast parsed message<br/>{type: "temperature", deviceId, data}
-        FlyWS->>Dashboard: Forward filtered messages (by deviceId)
-        Dashboard->>Dashboard: Display in live logs UI
-    end
-```
-
-### Health Monitoring System
-
-#### Connection Health Tracking
-```mermaid
-flowchart TD
-    A[Dashboard Opens Device Logs] --> B[Establish WebSocket Connection]
-    B --> C[Send Initial Ping]
-    C --> D[Start Periodic Health Checks<br/>Every 15 seconds]
-    
-    D --> E{Health Check Response?}
-    E -->|Success| F[✅ Server Healthy<br/>Enable Test Buttons]
-    E -->|Timeout/Error| G[⚠️ Server Warning<br/>Disable Test Buttons]
-    
-    F --> H[Continue Monitoring]
-    G --> I[Attempt Reconnection<br/>Exponential Backoff]
-    I --> B
-    H --> D
-    
-    J[Connection Lost] --> K[Auto-Reconnect Logic]
-    K --> L[Delay: 1s → 2s → 4s → 8s → 16s → 30s max]
-    L --> B
-```
-
-#### Health Check Endpoints
-
-**Basic Health Check:**
-```bash
-GET https://flyio-nbiot.fly.dev/health
-```
-
-**Response:**
-```json
-{
-  "status": "healthy",
-  "timestamp": "2024-01-15T10:30:00.000Z",
-  "server_info": {
-    "version": "1.0",
-    "live_logs_token_configured": true
-  },
-  "websocket_connections": {
-    "total_connections": 3,
-    "active_devices": 2,
-    "device_connections": {
-      "ABC123": 1,
-      "XYZ789": 2
-    }
-  },
-  "database_config": {
-    "supabase_url_configured": true,
-    "supabase_api_key_configured": true
-  }
-}
-```
-
-**Detailed Diagnostics:**
-```bash
-GET https://flyio-nbiot.fly.dev/health?detailed=true
-```
-
-Includes additional connection metadata, ping statistics, and client information.
-
-### Test Message System
-
-Built-in test message generation for development and debugging:
-
-```mermaid
-flowchart TD
-    A[Developer Clicks Test Button] --> B{Connection Healthy?}
-    B -->|No| C[Button Disabled<br/>Show Connection Status]
-    B -->|Yes| D[Send HTTP Request<br/>GET /test?deviceId=X&type=heartbeat]
-    
-    D --> E[Fly.io Generates Mock Message]
-    E --> F[Parse Mock Protobuf Data]
-    F --> G[Broadcast via WebSocket]
-    G --> H[Dashboard Receives Live Message]
-    
-    I[Database Storage Parallel Process]
-    F --> I
-    I --> J[Store Mock Data to Database]
-    J --> K[Broadcast Storage Status]
-    K --> H
-    
-    H --> L[Display in Live Logs<br/>✅ Test message + storage status]
-```
-
-**Available Test Types:**
-- `heartbeat` - Device configuration and activity data
-- `activity` - Power consumption metrics only
-- `temperature` - Temperature sensor readings
-- `location` - WiFi scanning data
-- `random` - Mixed message types
-
-### Database Storage Enhancement
-
-Enhanced storage system with error isolation and detailed reporting:
-
-```mermaid
-flowchart TD
-    A[Parsed Device Message] --> B{device_config Data?}
-    B -->|Yes| C[Upsert device_config<br/>Critical Priority]
-    B -->|No| D[Check Device Exists<br/>in Database]
-    
-    D -->|Found| E[Device OK - Proceed]
-    D -->|Missing| F[Create Minimal Record<br/>devid only]
-    C --> G{Config Success?}
-    F --> H{Creation Success?}
-    
-    G -->|Yes| E
-    G -->|No| I[❌ Abort - No Foreign Key]
-    H -->|Yes| E  
-    H -->|No| I
-    
-    E --> J[Execute Operations Individually<br/>Error Isolation]
-    
-    J --> K[Activity Storage]
-    J --> L[Reboot Storage]
-    J --> M[Temperature Storage] 
-    J --> N[WiFi Location Storage]
-    
-    K --> O[✅/❌ Activity Result]
-    L --> P[✅/❌ Reboot Result]
-    M --> Q[✅/❌ Temperature Result]
-    N --> R[✅/❌ WiFi Result]
-    
-    O --> S[Generate Storage Report<br/>{successful_operations/total_operations}]
-    P --> S
-    Q --> S
-    R --> S
-    
-    S --> T[Broadcast Storage Status<br/>to WebSocket Clients]
-    T --> U[Live Logs Show<br/>"Database storage: 3/4 operations successful"]
-```
-
-### Performance Characteristics
-
-#### WebSocket Performance
-- **Connection Establishment**: < 500ms
-- **Message Delivery Latency**: < 100ms from server to dashboard
-- **Ping/Pong Round Trip**: < 200ms
-- **Auto-reconnection Delay**: 1s to 30s (exponential backoff)
-
-#### Database Storage Performance  
-- **Individual Operation Timeout**: 10s per operation
-- **Typical Storage Time**: 50-200ms per operation
-- **Foreign Key Validation**: < 10ms
-- **Success Rate Target**: > 95% for healthy systems
-
-#### Health Monitoring
-- **Health Check Frequency**: Every 15 seconds (dashboard-initiated)
-- **Server Health Response**: < 100ms
-- **Connection Metadata Tracking**: Real-time
-- **Dead Connection Cleanup**: Automatic (on WebSocket close)
-
-### Security Considerations
-
-#### WebSocket Security
-- **Connection Authentication**: Optional token-based authentication
-- **Message Filtering**: Server filters messages by deviceId parameter  
-- **Rate Limiting**: Built-in WebSocket frame rate limits
-- **CORS Handling**: Configured for dashboard domain access
-
-#### Health Endpoint Security
-- **Public Access**: Health endpoints are publicly accessible (no sensitive data)
-- **Rate Limiting**: Standard HTTP rate limits apply
-- **Information Disclosure**: Only aggregate statistics, no sensitive device data
-
-This enhanced architecture provides developers with comprehensive visibility into system health, real-time debugging capabilities, and robust error handling for production deployments.
+### Data Retention
+- **Active devices**: Full history retention
+- **Inactive devices**: Configurable archival policies
+- **Location data**: Time-based aggregation for historical queries

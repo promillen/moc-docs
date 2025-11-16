@@ -1,65 +1,131 @@
-# MOC-IoT Device Tracking System - Technical Documentation
+# MOC-IoT Technical Documentation
 
-Internal documentation for the MOC-IoT device tracking system. This serves as both a deployment guide and protocol reference for firmware and backend development.
-
-## System Architecture
-
-The MOC-IoT system uses a straightforward data pipeline:
-
-```
-IoT Devices → CoAP/UDP:5683 → Fly.io Python Server → HTTPS/HMAC → Supabase Edge Functions → PostgreSQL → React Dashboard
-```
-
-### Core Components
-
-- **IoT Devices**: Send sensor data via CoAP over NB-IoT/LTE cellular networks using Protocol Buffers
-- **CoAP Bridge**: Python 3.11 server on Fly.io processes CoAP messages and forwards to Supabase
-- **Supabase Backend**: Edge functions handle data ingestion, PostgreSQL stores device data
-- **React Dashboard**: Real-time monitoring interface built with TypeScript and shadcn-ui
-
-## Quick Reference
-
-### For Firmware Development
-- [Protocol Specifications](/architecture/protocol-specs) - Protobuf message structures and CoAP endpoints
-- [Development Guide](/development/firmware-guide) - Message construction and testing procedures
-
-### For Backend Operations  
-- [CoAP Bridge Deployment](/architecture/coap-bridge) - Fly.io deployment and monitoring
-- [API Specifications](/api-docs/edge-function) - Supabase Edge Function interfaces
-- [Database Schema](/reference/database-schema) - Table structures and relationships
-
-### For Dashboard Development
-- [Dashboard Integration](/architecture/dashboard) - React frontend architecture and real-time updates
+Internal technical documentation for the MOC-IoT device tracking system - a comprehensive IoT ecosystem for monitoring NB-IoT connected devices via cellular networks.
 
 ## Technology Stack
 
-### Communication Protocol
-- **CoAP (UDP:5683)**: Lightweight protocol optimized for IoT devices
-- **Protocol Buffers**: Efficient binary message serialization  
-- **HMAC-SHA256**: Message authentication and integrity verification
+**Communication**: CoAP (UDP:5683), Protocol Buffers, HMAC-SHA256
+**Infrastructure**: Fly.io, Supabase PostgreSQL, NB-IoT/LTE
+**Frontend**: React 18, TypeScript, Vite, shadcn-ui, TanStack Query, Leaflet
 
-### Infrastructure
-- **Fly.io**: Container hosting for the CoAP bridge server
-- **Supabase**: PostgreSQL database with Edge Functions and real-time subscriptions
-- **NB-IoT/LTE**: Cellular connectivity for device communication
+## Quick Navigation
 
-### Frontend
-- **React 18** with TypeScript and Vite
-- **shadcn-ui** components with Tailwind CSS
-- **TanStack Query** for state management and caching
-- **Leaflet** for interactive device location mapping
+### Getting Started
 
-## Data Flow Overview
+- [Quick Start](/development/quick-start) - Get all components running in 10 minutes
+- [System Overview](/architecture/system-overview) - Understand the architecture
+- [Data Flow](/architecture/data-flow) - See how messages are processed
 
-1. **Device Transmission**: IoT devices encode sensor data using Protocol Buffers and send via CoAP
-2. **Bridge Processing**: Fly.io Python server receives CoAP messages, validates protobuf structure
-3. **Data Forwarding**: Server converts to JSON and forwards to Supabase Edge Functions with HMAC signature
-4. **Backend Processing**: Edge functions validate HMAC, process location data via HERE API, store in PostgreSQL
-5. **Real-time Updates**: Supabase notifies dashboard clients via WebSocket subscriptions
-6. **Dashboard Display**: React frontend updates device status, location markers, and sensor readings
+### Development
 
-## Getting Started
+- [CoAP Bridge](/development/coap-bridge) - Develop and deploy the Python CoAP server
+- [Dashboard](/development/dashboard) - Build and customize the React frontend
+- [Database Troubleshooting](/development/database-troubleshooting) - Debug database issues
 
-1. **Firmware Development**: Start with [Protocol Specifications](/architecture/protocol-specs) to understand message formats
-2. **Backend Setup**: Review [CoAP Bridge Deployment](/architecture/coap-bridge) for server configuration
-3. **Testing**: Use [Development Guide](/development/firmware-guide) for local testing procedures
+### Architecture
+
+- [System Overview](/architecture/system-overview) - Components and technology choices
+- [Data Flow](/architecture/data-flow) - Message processing sequences
+- [Protocol Overview](/architecture/protocol-overview) - CoAP and Protocol Buffers
+- [Security Architecture](/architecture/security-architecture) - Security layers and HMAC
+
+### API Reference
+
+- [Edge Function API](/api-reference/edge-function) - Supabase data ingestion endpoint
+- [Protocol Messages](/api-reference/protocol-messages) - Complete Protobuf definitions
+- [CoAP Endpoints](/api-reference/coap-endpoints) - Device communication API
+
+### Reference Materials
+
+- [Database Schema](/reference/database-schema) - Table structures and relationships
+- [Environment Variables](/reference/environment-vars) - Configuration reference
+
+## Documentation Overview
+
+### Architecture Section
+
+**Purpose**: Understand the system design without code
+- High-level component descriptions
+- Data flow diagrams
+- Technology rationale
+- Security model
+
+**Best for**: New team members, architecture reviews, system understanding
+
+### Development Section
+
+**Purpose**: Hands-on guides for building and deploying
+- Step-by-step setup instructions
+- Code examples and best practices
+- Deployment procedures
+- Troubleshooting guides
+
+**Best for**: Active development, debugging, deployment
+
+### API Reference Section
+
+**Purpose**: Detailed specifications with examples
+- Complete API endpoint documentation
+- Protocol Buffer message definitions
+- Request/response examples
+- Authentication details
+
+**Best for**: Integration work, API testing, device communication
+
+### Reference Section
+
+**Purpose**: Quick lookup tables and specifications
+- Database schema reference
+- Environment variable lists
+- Configuration options
+
+**Best for**: Quick lookups during development
+
+## Common Tasks
+
+### I want to...
+
+**...run the dashboard locally**
+→ [Quick Start](/development/quick-start) → Dashboard Setup
+
+**...deploy the CoAP bridge**
+→ [CoAP Bridge Development](/development/coap-bridge) → Deployment
+
+**...understand how location works**
+→ [Data Flow](/architecture/data-flow) → Location Processing
+
+**...debug database issues**
+→ [Database Troubleshooting](/development/database-troubleshooting)
+
+**...understand security**
+→ [Security Architecture](/architecture/security-architecture)
+
+**...see all database tables**
+→ [Database Schema](/reference/database-schema)
+
+**...test the CoAP endpoint**
+→ [CoAP Endpoints](/api-reference/coap-endpoints) → Testing Tools
+
+## Documentation Usage Tips
+
+**For Architecture Understanding**:
+1. Start with [System Overview](/architecture/system-overview)
+2. Review [Data Flow](/architecture/data-flow) diagrams
+3. Read [Protocol Overview](/architecture/protocol-overview)
+
+**For New Development**:
+1. Follow [Quick Start](/development/quick-start) guide
+2. Explore component-specific development guides
+3. Reference API docs as needed
+
+**For Integration Work**:
+1. Review [Protocol Messages](/api-reference/protocol-messages)
+2. Test with [CoAP Endpoints](/api-reference/coap-endpoints)
+3. Check [Edge Function API](/api-reference/edge-function) for backend integration
+
+**For Troubleshooting**:
+1. Check component-specific development guides
+2. Review [Database Troubleshooting](/development/database-troubleshooting)
+3. Consult architecture docs for understanding data flow
+
+**Last updated**: November 16, 2024
