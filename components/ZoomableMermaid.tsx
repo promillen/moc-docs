@@ -40,7 +40,7 @@ export function ZoomableMermaid({ chart, title }: ZoomableMermaidProps) {
         startOnLoad: false,
         securityLevel: 'loose' as const,
         fontFamily: 'inherit',
-        theme: isDarkTheme ? 'dark' : 'default'
+        theme: (isDarkTheme ? 'dark' : 'default') as 'dark' | 'default'
       }
 
       try {
