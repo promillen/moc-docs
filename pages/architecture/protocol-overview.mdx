@@ -65,17 +65,18 @@ This page provides a high-level overview of the communication protocols used in 
 
 ```
 Uplink (root message)
-├── uplink_count (message counter)
+├── uplink_count: uint32 (message counter)
 ├── Heartbeat (device status)
 │   ├── Config (device configuration)
 │   ├── Activity (power consumption)
-│   └── Reboot (system events)
-├── Location (positioning data)
-│   ├── WiFi[] (access points)
-│   ├── Cells[] (cellular towers)
-│   └── GNSS (satellite positioning)
-└── SensorData (measurements)
-    └── Custom JSONB payloads
+│   ├── Reboot (system events)
+│   ├── internal_temperature: uint32
+│   └── internal_voltage: uint32
+├── ExternalSensor (sensor measurements)
+│   └── external_sensor: string (flexible JSON format)
+└── Location (positioning data)
+    ├── CellTower (cellular tower)
+    └── WiFi[] (access points, repeated)
 ```
 
 ### Key Protobuf Concepts
@@ -99,6 +100,228 @@ Uplink (root message)
 - Arrays of values (e.g., `repeated WiFi wifi`)
 - Variable-length lists
 - Efficient binary encoding
+
+## Complete Protobuf Schema
+
+### Uplink Messages (Device → Server)
+
+The complete protocol buffer definition for device uplink messages:
+
+```protobuf
+syntax = "proto3";
+package uplink;
+
+enum LocationMode {
+  NONE = 0;
+  CELL_TOWER = 1;
+  GNSS = 2;
+  WIFI = 3;
+}
+
+message Config {
+  uint32 dev_id = 1;
+  uint32 heartbeat_interval = 2;
+  string iccid = 3;
+  string hw_version = 4;
+  string sw_version = 5;
+  string apn = 6;
+  uint32 band = 7;
+  LocationMode location_mode = 8;
+}
+
+message Activity {
+  uint32 sleep = 1;
+  uint32 modem = 2;
+  uint32 gnss = 3;
+  uint32 wifi = 4;
+  uint32 other = 5;
+}
+
+enum RebootReason {
+  UNKNOWN = 0;
+  SOFTWARE = 1;
+  ASSERT = 2;
+  RTC_WAKEUP = 3;
+  POWER_ON = 4;
+  WATCHDOG = 5;
+}
+
+message Reboot {
+  RebootReason reason = 1;
+  string file = 2;
+  uint32 line = 3;
+}
+
+message Heartbeat {
+  Config config = 1;
+  Activity activity = 2;
+  Reboot reboot = 3;
+  uint32 internal_temperature = 4;
+  uint32 internal_voltage = 5;
+}
+
+message CellTower {
+  uint32 mcc = 1;
+  uint32 mnc = 2;
+  uint32 tac = 3;
+  uint32 cell_id = 4;
+  uint32 act = 5;
+}
+
+message WiFi {
+  string mac = 1;
+  sint32 rssi = 2;
+}
+
+message Location {
+  CellTower cell_tower = 1;
+  repeated WiFi wifi = 2;
+}
+
+message ExternalSensor {
+  string external_sensor = 1;
+}
+
+message Uplink {
+  Heartbeat heartbeat = 1;
+  ExternalSensor external_sensor = 2;
+  Location location = 3;
+  uint32 uplink_count = 4;
+}
+```
+
+### Downlink Messages (Server → Device)
+
+The protocol buffer definition for server downlink messages:
+
+```protobuf
+syntax = "proto3";
+package downlink;
+
+enum LocationMode {
+  NONE = 0;
+  CELL_TOWER = 1;
+  GNSS = 2;
+  WIFI = 3;
+}
+
+message Config {
+  uint32 heartbeat_interval = 1;
+  LocationMode location_mode = 2;
+}
+
+message FUOTA {
+  string sw_version = 1;
+  string checksum = 2;
+}
+
+message Downlink {
+  Config config = 1;
+  FUOTA fuota = 2;
+}
+```
+
+### Example Uplink Message (JSON Representation)
+
+When decoded from protobuf, an uplink message looks like this in JSON format:
+
+```json
+{
+  "uplink": {
+    "heartbeat": {
+      "config": {
+        "dev_id": 10000,
+        "heartbeat_interval": 720,
+        "iccid": "89012345678901234567",
+        "hw_version": "0.1",
+        "sw_version": "2025.04",
+        "apn": "lpwa.telia.iot",
+        "band": 20,
+        "location_mode": 1
+      },
+      "activity": {
+        "sleep": 0,
+        "modem": 0,
+        "gnss": 0,
+        "wifi": 0,
+        "other": 0
+      },
+      "reboot": {
+        "reason": 0,
+        "file": "file.bin",
+        "line": 1
+      },
+      "internal_temperature": 25,
+      "internal_voltage": 3600
+    },
+    "external_sensor": {
+      "sensor": "temp:1,hum:2,con:2.5"
+    },
+    "location": {
+      "cell_tower": {
+        "mcc": 240,
+        "mnc": 5,
+        "tac": 12345,
+        "cell_id": 67890,
+        "act": 2
+      },
+      "wifi": [
+        {
+          "mac": "001122334455",
+          "rssi": -70
+        }
+      ]
+    },
+    "uplink_count": 1
+  }
+}
+```
+
+### Field Descriptions
+
+**Heartbeat.Config**:
+- `dev_id`: Unique device identifier (numeric)
+- `heartbeat_interval`: Seconds between status updates (e.g., 720 = 12 minutes)
+- `iccid`: SIM card identifier (20 digits)
+- `hw_version`: Hardware revision (string, e.g., "0.1")
+- `sw_version`: Firmware version (string, e.g., "2025.04")
+- `apn`: Cellular APN for data connection (e.g., "lpwa.telia.iot")
+- `band`: LTE frequency band number (e.g., 20 = 800MHz)
+- `location_mode`: Positioning method (0=NONE, 1=CELL_TOWER, 2=GNSS, 3=WIFI)
+
+**Heartbeat.Activity**:
+- All fields in seconds, representing time spent in each power state
+- `sleep`: Low-power sleep mode
+- `modem`: Cellular modem active
+- `gnss`: GPS/GNSS positioning active
+- `wifi`: WiFi scanning active
+- `other`: Miscellaneous operations
+
+**Heartbeat.Reboot**:
+- `reason`: Reboot cause (0=UNKNOWN, 1=SOFTWARE, 2=ASSERT, 3=RTC_WAKEUP, 4=POWER_ON, 5=WATCHDOG)
+- `file`: Source file where crash occurred (if applicable)
+- `line`: Line number in source file (if applicable)
+
+**Heartbeat**:
+- `internal_temperature`: Modem temperature in Celsius
+- `internal_voltage`: Battery voltage in millivolts (e.g., 3600 = 3.6V)
+
+**ExternalSensor**:
+- `sensor`: Flexible string format for sensor data (e.g., "temp:25.5,hum:60")
+
+**Location.CellTower**:
+- `mcc`: Mobile Country Code (e.g., 240 for Sweden)
+- `mnc`: Mobile Network Code (e.g., 5 for Telia)
+- `tac`: Tracking Area Code
+- `cell_id`: Cell tower identifier
+- `act`: Access technology (0=GSM, 1=UTRAN, 2=LTE)
+
+**Location.WiFi** (repeated):
+- `mac`: WiFi access point MAC address (12 hex digits)
+- `rssi`: Signal strength in dBm (negative value, e.g., -70)
+
+**Uplink**:
+- `uplink_count`: Sequential message counter, increments with each transmission
 
 ## Message Categories
 
